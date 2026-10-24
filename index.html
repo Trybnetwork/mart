@@ -246,14 +246,32 @@ header.site{position:sticky;top:0;z-index:60;background:var(--navy);color:#fff;
 .profile-head .avatar{width:74px;height:74px;font-size:27px}
 .profile-head .p-name{font-size:21px;font-weight:800;line-height:1.2}
 .profile-head .p-sub{color:var(--muted);font-size:13.5px;line-height:1.5;margin-top:2px}
-.balance-card{background:linear-gradient(135deg,var(--navy) 0%,var(--navy-3) 100%);color:#fff;
-  border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);margin:0 0 8px}
-.balance-card small{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--gold-soft)}
-.balance-card .b-usd{font-size:30px;font-weight:800;margin:3px 0 1px}
-.balance-card .b-ngn{color:#C9CDE8;font-size:14px}
-.balance-card .b-coin{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.18);
-  display:flex;justify-content:space-between;align-items:center;font-size:14px}
-.balance-card .b-coin b{color:var(--gold-soft);font-size:16px}
+/* Balance card: TrybNetwork v2 balance-card pattern — raised 3D card,
+   centered label / amount / sub-line typography. Mart content unchanged. */
+.balance-card{background:linear-gradient(165deg,#FFFFFF 0%,#F3F5FB 100%);color:var(--navy);
+  border:1.5px solid rgba(11,17,50,.10);border-radius:24px;padding:20px 18px 16px;
+  box-shadow:0 30px 50px -18px rgba(11,17,50,.38),0 14px 24px -12px rgba(11,17,50,.24),
+  0 3px 6px rgba(11,17,50,.10),inset 0 1px 0 rgba(255,255,255,.9),inset 0 -1px 0 rgba(11,17,50,.05);
+  margin:0 0 8px;text-align:center}
+.balance-card small{display:block;font-size:13px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--navy)}
+.balance-card .b-amount{font-size:50px;font-weight:800;letter-spacing:-.02em;line-height:1;
+  font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:10px}
+@media (max-width:400px){ .balance-card .b-amount{font-size:44px} }
+.balance-card .b-sub{margin-top:8px;font-size:13px;color:#6B7086;font-weight:600}
+.balance-card .b-coin{margin-top:14px;padding-top:12px;border-top:1px solid rgba(11,17,50,.10);
+  display:flex;justify-content:space-between;align-items:center;font-size:14px;text-align:left}
+.balance-card .b-coin b{color:#000;font-size:16px;font-weight:800}
+@media (prefers-color-scheme: dark){
+  .balance-card{background:linear-gradient(165deg,var(--navy-3) 0%,var(--navy) 100%);color:#fff;
+    border-color:rgba(255,255,255,.14);
+    box-shadow:0 30px 50px -18px rgba(0,0,0,.6),0 14px 24px -12px rgba(0,0,0,.5),
+    0 3px 6px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.12)}
+  .balance-card small{color:var(--gold-soft)}
+  .balance-card .b-sub{color:#C9CDE8}
+  .balance-card .b-coin{border-top-color:rgba(255,255,255,.18)}
+  .balance-card .b-coin b{color:#fff}
+}
 .listing-row{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);
   border-radius:14px;padding:11px 13px;margin:0 0 10px;box-shadow:var(--shadow)}
 .listing-row img,.listing-row .o-thumb{width:52px;height:52px;border-radius:9px;object-fit:cover;flex:none}
@@ -658,6 +676,17 @@ function fmtLocal(usdAmount){
   return c.symbol + sep + num;
 }
 function localEq(ngn){ var s = fmtLocal(usdOf(ngn)); return s ? "≈ " + s : ""; }
+/* Approximate conversion OF THE BALANCE: always in the viewer's own country
+   currency (their TrybNetwork signup country). Only Nigerians see ₦ here;
+   a USD viewer sees the $ figure itself. */
+function balanceLocalEq(usdAmount){
+  var usd = Number(usdAmount) || 0;
+  var c = viewerCountry();
+  if(!c || c.code === "NG") return "≈ " + fmt(Math.round(usd * RATE));
+  if(c.ccy === "USD") return "≈ " + fmtUSD(usd);
+  var s = fmtLocal(usd);
+  return s ? "≈ " + s : "≈ " + fmtUSD(usd);
+}
 function sellerCountryOf(sid){
   var st = S.stats[sid];
   if(st && st.country) return countryOf(st.country);
@@ -1056,10 +1085,10 @@ function payOptionsHTML(l){
   } else if(bal === null){
     h += opt("main_balance", "Main Balance", "Loading your balance…", {disabled:true});
   } else if(insufficient){
-    h += opt("main_balance", "Main Balance", '<span class="warn">Insufficient Main Balance — you have '+fmtUSD(bal)+' (≈ '+fmt(Math.round(bal*RATE))+'), this holds '+fmtUSD(usd)+'.</span>', {disabled:true});
+    h += opt("main_balance", "Main Balance", '<span class="warn">Insufficient Main Balance — you have '+fmtUSD(bal)+' ('+balanceLocalEq(bal)+'), this holds '+fmtUSD(usd)+'.</span>', {disabled:true});
   } else {
     var holdLocal = (!isNG && vc && vc.ccy !== "USD") ? fmtLocal(usd) : "";
-    h += opt("main_balance", "Main Balance", 'Your balance: <b>'+fmtUSD(bal)+'</b> (≈ '+fmt(Math.round(bal*RATE))+'). TrybVault will hold exactly <b>'+fmtUSD(usd)+'</b>'+(holdLocal ? ' (≈ '+holdLocal+')' : '')+' for this item.');
+    h += opt("main_balance", "Main Balance", 'Your balance: <b>'+fmtUSD(bal)+'</b> ('+balanceLocalEq(bal)+'). TrybVault will hold exactly <b>'+fmtUSD(usd)+'</b>'+(holdLocal ? ' (≈ '+holdLocal+')' : '')+' for this item.');
   }
   if(isNG){
     h += opt("bank_transfer", "Bank Transfer", "Transfer to the TrybVault escrow account. TrybVault confirms your transfer before the order shows Paid.");
@@ -1445,9 +1474,9 @@ function renderProfile(){
   var since = p.created_at ? monthYear(p.created_at) : "";
   var w = S.wallet;
   var balHTML = w
-    ? '<div class="balance-card"><small>Main Balance</small><div class="b-usd">'+fmtUSD(w.main_balance)+'</div><div class="b-ngn">≈ '+fmt(Math.round((Number(w.main_balance)||0)*RATE))+' · your real TrybNetwork balance</div>' +
+    ? '<div class="balance-card"><small>Main Balance</small><div class="b-amount">'+fmtUSD(w.main_balance)+'</div><div class="b-sub">'+balanceLocalEq(w.main_balance)+' · your real TrybNetwork balance</div>' +
       (w.trybcoin != null ? '<div class="b-coin"><span>TrybCoin</span><b>'+Number(w.trybcoin).toLocaleString("en-US")+' TN</b></div>' : '') + '</div>'
-    : '<div class="balance-card"><small>Main Balance</small><div class="b-usd">…</div><div class="b-ngn">Loading your real TrybNetwork balance</div></div>';
+    : '<div class="balance-card"><small>Main Balance</small><div class="b-amount">…</div><div class="b-sub">Loading your real TrybNetwork balance</div></div>';
   var listingsHTML = "";
   if(!S.myListings.length){
     listingsHTML = '<p style="color:var(--muted);font-size:14px">You haven\u2019t listed anything yet.</p>';
