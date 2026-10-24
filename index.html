@@ -42,10 +42,10 @@ header.site{position:sticky;top:0;z-index:60;background:var(--navy);color:#fff;
 .header-in{max-width:1120px;margin:0 auto;display:flex;align-items:center;gap:10px;
   padding:calc(9px + env(safe-area-inset-top, 0px)) 10px 9px 14px;min-height:calc(56px + env(safe-area-inset-top, 0px))}
 .head-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;
-  width:42px;height:42px;border-radius:50%;border:2px solid #fff;overflow:hidden;
+  width:42px;height:42px;border-radius:50%;border:2px solid #fff;overflow:visible;
   background:transparent;color:#fff;flex:none;padding:0;font-weight:800;font-size:15px}
 .head-btn svg{width:22px;height:22px}
-.head-btn img{width:100%;height:100%;object-fit:cover}
+.head-btn img{width:100%;height:100%;object-fit:cover;border-radius:50%}
 .brand{display:flex;align-items:center;gap:6px;text-decoration:none;flex:none}
 .brand img{height:36px;width:auto;flex:none}
 .brand .word{font-family:Georgia,"Times New Roman",serif;font-size:21px;letter-spacing:.2px;color:#fff;white-space:nowrap}
@@ -145,9 +145,15 @@ header.site{position:sticky;top:0;z-index:60;background:var(--navy);color:#fff;
 .detail-desc h3,.panel h3{margin:0 0 8px;font-size:15px}
 .seller-card{display:flex;gap:13px;align-items:center;background:var(--surface);border:1px solid var(--line);
   border-radius:var(--radius);padding:15px 16px;box-shadow:var(--shadow)}
-.avatar{width:50px;height:50px;border-radius:50%;background:var(--navy);color:var(--gold);overflow:hidden;
+.avatar{width:50px;height:50px;border-radius:50%;background:var(--navy);color:var(--gold);overflow:visible;position:relative;
   display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;flex:none;font-family:Georgia,serif}
-.avatar img{width:100%;height:100%;object-fit:cover}
+.avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+/* Country flag badge pinned to the top-right rim of a profile circle —
+   visible to everyone, signed in or out. */
+.flag-badge{position:absolute;top:-2px;right:-2px;width:34%;aspect-ratio:1/1;border-radius:50%;
+  background:#fff;box-shadow:0 1px 5px rgba(11,17,50,.4);display:flex;align-items:center;justify-content:center;
+  font-size:.6em;line-height:1;pointer-events:none;z-index:3;font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif}
+.head-btn .flag-badge{width:16px;height:16px;font-size:10.5px;top:-3px;right:-3px}
 .seller-card .s-name{font-weight:700;font-size:16px}
 .seller-card .s-sub{color:var(--muted);font-size:13px;line-height:1.5}
 .stars{color:var(--gold);font-weight:700}
@@ -264,6 +270,8 @@ header.site{position:sticky;top:0;z-index:60;background:var(--navy);color:#fff;
 .balance-card .b-amount{font-size:50px;font-weight:800;letter-spacing:-.02em;line-height:1;
   font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:10px}
 @media (max-width:400px){ .balance-card .b-amount{font-size:44px} }
+.balance-card .b-amount.long{font-size:38px}
+@media (max-width:400px){ .balance-card .b-amount.long{font-size:33px} }
 .balance-card .b-sub{margin-top:8px;font-size:13px;color:#6B7086;font-weight:600}
 .balance-card .b-coin{margin-top:14px;padding-top:12px;border-top:1px solid rgba(11,17,50,.10);
   display:flex;justify-content:space-between;align-items:center;font-size:14px;text-align:left}
@@ -682,6 +690,15 @@ function fmtLocal(usdAmount){
   return c.symbol + sep + num;
 }
 function localEq(ngn){ var s = fmtLocal(usdOf(ngn)); return s ? "≈ " + s : ""; }
+/* Display flip: the viewer's own currency leads as the primary price and
+   the canonical ₦ becomes the small "≈" figure. For a Nigerian viewer the
+   primary stays ₦ and there is no secondary figure. Display only — the
+   amount of money that actually moves stays price_ngn / USD as before. */
+function priceParts(ngn){
+  var s = fmtLocal(usdOf(ngn));
+  if(!s) return { primary: fmt(ngn), secondary: "" };
+  return { primary: s, secondary: "≈ " + fmt(ngn) };
+}
 /* Approximate conversion OF THE BALANCE: always in the viewer's own country
    currency (their TrybNetwork signup country). Only Nigerians see ₦ here;
    a USD viewer sees the $ figure itself. */
@@ -692,6 +709,35 @@ function balanceLocalEq(usdAmount){
   if(c.ccy === "USD") return "≈ " + fmtUSD(usd);
   var s = fmtLocal(usd);
   return s ? "≈ " + s : "≈ " + fmtUSD(usd);
+}
+/* Balance-card flip: the BIG figure is the viewer's own country-currency
+   equivalent of the USD balance; the sub-line is the dollar approximation.
+   Applied uniformly (a US viewer sees $ big and "≈ $" beneath). Display
+   only — checkout readouts keep their exact canonical amounts. */
+function balanceParts(usdAmount){
+  var usd = Number(usdAmount) || 0;
+  var c = viewerCountry();
+  var big;
+  if(!c || c.code === "NG") big = fmt(Math.round(usd * RATE));
+  else if(c.ccy === "USD") big = fmtUSD(usd);
+  else big = fmtLocal(usd) || fmtUSD(usd);
+  return { primary: big, secondary: "≈ " + fmtUSD(usd) };
+}
+/* Country flag badge on avatars: the pictured user's signup country,
+   resolved only from data already fetched (own profile / seller stats).
+   No country on hand → no badge, never a guess. */
+function flagBadge(country){
+  if(!country || !country.flag) return "";
+  return '<span class="flag-badge" aria-hidden="true">' + country.flag + "</span>";
+}
+function ownCountry(){
+  return S.user ? countryOf(viewerCountryCode()) : null;
+}
+function avatarHTML(p, name, country){
+  var inner = (p && p.avatar_url)
+    ? '<img src="' + esc(p.avatar_url) + '" alt="" />'
+    : esc(initials(name));
+  return '<div class="avatar">' + inner + flagBadge(country) + "</div>";
 }
 function sellerCountryOf(sid){
   var st = S.stats[sid];
@@ -790,7 +836,7 @@ function renderHead(){
   if(S.user){
     var p = S.profile;
     var av = p && p.avatar_url;
-    b.innerHTML = av ? '<img src="'+esc(av)+'" alt="" />' : esc(initials(displayName(p, "You")));
+    b.innerHTML = (av ? '<img src="'+esc(av)+'" alt="" />' : esc(initials(displayName(p, "You")))) + flagBadge(ownCountry());
     b.setAttribute("aria-label", "Your profile — " + displayName(p, "signed in"));
   } else {
     b.innerHTML = headGlyph();
@@ -983,14 +1029,14 @@ function renderGrid(){
   items.forEach(function(l){
     var card = document.createElement("button");
     card.className = "card";
-    card.setAttribute("aria-label", l.title + " — " + fmt(l.price_ngn));
+    var pp = priceParts(l.price_ngn);
+    card.setAttribute("aria-label", l.title + " — " + pp.primary);
     var sc = sellerCountryOf(l.seller_id);
-    var loc = localEq(l.price_ngn);
     card.innerHTML =
       '<span class="photo">' + coverHTML(l) +
       (l.escrow_enabled ? '<span class="vault-badge">'+shieldSVG(13)+' TrybVault</span>' : '') + '</span>' +
-      '<span class="body"><span class="price">'+fmt(l.price_ngn)+'</span>' +
-      (loc ? '<span class="price-local">'+esc(loc)+'</span>' : '') +
+      '<span class="body"><span class="price">'+esc(pp.primary)+'</span>' +
+      (pp.secondary ? '<span class="price-local">'+esc(pp.secondary)+'</span>' : '') +
       '<span class="title">'+esc(l.title)+'</span>' +
       '<span class="meta">'+esc(sellerName(l.seller_id))+' · '+(sc ? esc(sc.flag+' '+sc.name)+' · ' : '')+esc(l.location)+' · '+(l.kind==="digital"?"Digital":"Physical")+'</span>' +
       (l.kind==="digital" && S.deliveryMap[l.id] ? '<span class="instant-badge">⚡ Instant delivery</span>' : '') + '</span>';
@@ -1014,17 +1060,15 @@ function refreshDetailSeller(){
 }
 function sellerCardHTML(l){
   var p = S.profiles[l.seller_id] || {};
-  var av = p.avatar_url
-    ? '<div class="avatar"><img src="'+esc(p.avatar_url)+'" alt="" /></div>'
-    : '<div class="avatar">'+esc(initials(sellerName(l.seller_id)))+'</div>';
+  var av = avatarHTML(p, sellerName(l.seller_id), sellerCountryOf(l.seller_id));
   var line = sellerLine(l.seller_id);
   var sc = sellerCountryOf(l.seller_id);
   return av + '<div><div class="s-name">'+esc(sellerName(l.seller_id))+'</div>' +
     '<div class="s-sub">'+(line ? esc(line) + '<br/>' : '') + (sc ? esc(sc.flag + ' ' + sc.name) + ' · ' : '') + esc(l.location) + '</div></div>';
 }
 function detailPriceHTML(l){
-  var loc = localEq(l.price_ngn);
-  return fmt(l.price_ngn) + (loc ? ' <span class="detail-price-local">'+esc(loc)+'</span>' : '');
+  var pp = priceParts(l.price_ngn);
+  return esc(pp.primary) + (pp.secondary ? ' <span class="detail-price-local">'+esc(pp.secondary)+'</span>' : '');
 }
 function openDetail(id){
   var l = findListing(id); if(!l) return;
@@ -1083,8 +1127,9 @@ function payOptionsHTML(l){
       '<span class="radio"></span><span><span class="p-name">'+name+'</span><span class="p-sub" style="display:block">'+sub+'</span>' +
       (opts.extra || "") + '</span></button>';
   }
-  var h = '<p class="pay-total">Item price: <b>'+fmt(l.price_ngn)+'</b>' +
-    (localEq(l.price_ngn) ? ' <span class="pt-local">'+esc(localEq(l.price_ngn))+'</span>' : '') + '</p>';
+  var pp = priceParts(l.price_ngn);
+  var h = '<p class="pay-total">Item price: <b>'+esc(pp.primary)+'</b>' +
+    (pp.secondary ? ' <span class="pt-local">'+esc(pp.secondary)+'</span>' : '') + '</p>';
   h += '<h3 style="margin:0 0 10px;font-size:15px">How will you pay?</h3>';
   if(!S.user){
     h += opt("main_balance", "Main Balance", "Sign in to pay from your real TrybNetwork Main Balance.", {disabled:true});
@@ -1474,13 +1519,12 @@ function renderProfile(){
   }
   var p = S.profile || {};
   var name = displayName(p, "TrybMart member");
-  var av = p.avatar_url
-    ? '<div class="avatar"><img src="'+esc(p.avatar_url)+'" alt="" /></div>'
-    : '<div class="avatar">'+esc(initials(name))+'</div>';
+  var av = avatarHTML(p, name, ownCountry());
   var since = p.created_at ? monthYear(p.created_at) : "";
   var w = S.wallet;
+  var bp = w ? balanceParts(w.main_balance) : null;
   var balHTML = w
-    ? '<div class="balance-card"><small>Main Balance</small><div class="b-amount">'+fmtUSD(w.main_balance)+'</div><div class="b-sub">'+balanceLocalEq(w.main_balance)+' · your real TrybNetwork balance</div>' +
+    ? '<div class="balance-card"><small>Main Balance</small><div class="b-amount'+(bp.primary.length > 11 ? " long" : "")+'">'+bp.primary+'</div><div class="b-sub">'+bp.secondary+' · your real TrybNetwork balance</div>' +
       (w.trybcoin != null ? '<div class="b-coin"><span>TrybCoin</span><b>'+Number(w.trybcoin).toLocaleString("en-US")+' TN</b></div>' : '') + '</div>'
     : '<div class="balance-card"><small>Main Balance</small><div class="b-amount">…</div><div class="b-sub">Loading your real TrybNetwork balance</div></div>';
   var listingsHTML = "";
