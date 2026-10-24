@@ -690,14 +690,35 @@ function fmtLocal(usdAmount){
   return c.symbol + sep + num;
 }
 function localEq(ngn){ var s = fmtLocal(usdOf(ngn)); return s ? "≈ " + s : ""; }
-/* Display flip: the viewer's own currency leads as the primary price and
-   the canonical ₦ becomes the small "≈" figure. For a Nigerian viewer the
-   primary stays ₦ and there is no secondary figure. Display only — the
-   amount of money that actually moves stays price_ngn / USD as before. */
-function priceParts(ngn){
-  var s = fmtLocal(usdOf(ngn));
-  if(!s) return { primary: fmt(ngn), secondary: "" };
-  return { primary: s, secondary: "≈ " + fmt(ngn) };
+/* Format a USD amount in an arbitrary country's currency, using the same
+   rounding/separator style as fmtLocal. */
+function fmtInCountry(usdAmount, c){
+  if(!c) return "";
+  var v = Number(usdAmount) * c.rate;
+  var num = v >= 100
+    ? Math.round(v).toLocaleString("en-US")
+    : v.toLocaleString("en-US", { minimumFractionDigits:2, maximumFractionDigits:2 });
+  var sep = /^[A-Za-z]{2,}$/.test(c.symbol) ? " " : "";
+  return c.symbol + sep + num;
+}
+/* Display rule: the viewer's own currency leads as the primary price; the
+   small "≈" figure is the SELLER's native price — the amount expressed in
+   the seller's signup-country currency (an NG seller's native price is the
+   ₦ amount itself). The secondary shows only when the seller's currency
+   differs from the viewer's; if the seller's country is unknown, USD is
+   treated as native. Display only — the amount of money that actually
+   moves stays price_ngn / USD as before. */
+function priceParts(ngn, sellerId){
+  var usd = usdOf(ngn);
+  var local = fmtLocal(usd);
+  var primary = local ? local : fmt(ngn);
+  var vc = viewerCountry();
+  var sc = (sellerId ? sellerCountryOf(sellerId) : null) || countryOf("US");
+  var secondary = "";
+  if(sc && vc && sc.ccy !== vc.ccy){
+    secondary = "≈ " + (sc.code === "NG" ? fmt(ngn) : fmtInCountry(usd, sc));
+  }
+  return { primary: primary, secondary: secondary };
 }
 /* Approximate conversion OF THE BALANCE: always in the viewer's own country
    currency (their TrybNetwork signup country). Only Nigerians see ₦ here;
@@ -1029,7 +1050,7 @@ function renderGrid(){
   items.forEach(function(l){
     var card = document.createElement("button");
     card.className = "card";
-    var pp = priceParts(l.price_ngn);
+    var pp = priceParts(l.price_ngn, l.seller_id);
     card.setAttribute("aria-label", l.title + " — " + pp.primary);
     var sc = sellerCountryOf(l.seller_id);
     card.innerHTML =
@@ -1067,7 +1088,7 @@ function sellerCardHTML(l){
     '<div class="s-sub">'+(line ? esc(line) + '<br/>' : '') + (sc ? esc(sc.flag + ' ' + sc.name) + ' · ' : '') + esc(l.location) + '</div></div>';
 }
 function detailPriceHTML(l){
-  var pp = priceParts(l.price_ngn);
+  var pp = priceParts(l.price_ngn, l.seller_id);
   return esc(pp.primary) + (pp.secondary ? ' <span class="detail-price-local">'+esc(pp.secondary)+'</span>' : '');
 }
 function openDetail(id){
@@ -1127,7 +1148,7 @@ function payOptionsHTML(l){
       '<span class="radio"></span><span><span class="p-name">'+name+'</span><span class="p-sub" style="display:block">'+sub+'</span>' +
       (opts.extra || "") + '</span></button>';
   }
-  var pp = priceParts(l.price_ngn);
+  var pp = priceParts(l.price_ngn, l.seller_id);
   var h = '<p class="pay-total">Item price: <b>'+esc(pp.primary)+'</b>' +
     (pp.secondary ? ' <span class="pt-local">'+esc(pp.secondary)+'</span>' : '') + '</p>';
   h += '<h3 style="margin:0 0 10px;font-size:15px">How will you pay?</h3>';
