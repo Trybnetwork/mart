@@ -111,6 +111,9 @@ header.site{position:sticky;top:0;z-index:60;background:var(--navy);color:#fff;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.7em}
 .card .meta{font-size:12.5px;color:var(--muted);line-height:1.4}
 .card .price-local{font-size:13px;color:var(--muted);font-weight:600}
+.instant-badge{display:inline-flex;align-items:center;gap:4px;align-self:flex-start;background:#FFF6E0;color:#6B5410;border:1px solid #EBD48A;font-size:11.5px;font-weight:800;padding:4px 9px;border-radius:999px;margin-top:4px}
+@media (prefers-color-scheme: dark){ .instant-badge{background:#2A2410;color:#EBD48A;border-color:#5C4D17} }
+.instant-line{margin:9px 0 0;font-size:14px;font-weight:700;color:var(--green-dark)}
 .detail-price-local{font-size:17px;color:var(--muted);font-weight:600}
 .pay-total{font-size:15px;margin:0 0 12px;line-height:1.5}
 .pay-total .pt-local{color:var(--muted);font-weight:600;font-size:13.5px}
@@ -221,6 +224,15 @@ header.site{position:sticky;top:0;z-index:60;background:var(--navy);color:#fff;
 .awaiting{background:#FFF6E0;border:1px solid #EBD48A;color:#6B5410;border-radius:12px;
   padding:11px 14px;font-size:13.5px;font-weight:600;margin-top:12px;line-height:1.6}
 @media (prefers-color-scheme: dark){ .awaiting{background:#2A2410;color:#EBD48A;border-color:#5C4D17} }
+.text-act{background:none;border:0;color:var(--danger);font-weight:700;font-size:14px;padding:8px 4px;justify-self:center}
+.dispute-form{display:grid;gap:8px;text-align:left}
+.dispute-form label{font-weight:700;font-size:14px}
+.dispute-form textarea{width:100%;background:var(--surface);border:1.5px solid var(--line);
+  border-radius:12px;padding:11px 13px;font-size:14.5px;outline:none;resize:vertical}
+.dispute-form textarea:focus{border-color:var(--gold)}
+.dispute-btns{display:flex;gap:8px}
+.dispute-btns .btn{flex:1}
+.auto-note{color:var(--muted);font-size:13px;margin:10px 0 0;line-height:1.55}
 .order-actions{display:grid;gap:8px;margin-top:12px}
 .rate-row{display:flex;align-items:center;gap:6px;margin-top:12px;flex-wrap:wrap}
 .rate-row .r-label{font-size:13.5px;font-weight:700;margin-right:2px}
@@ -430,6 +442,12 @@ footer .fine{font-size:12px;color:#8B90B8;margin-top:16px}
           <button type="button" data-val="digital">Digital item / service</button>
         </div>
       </div>
+      <div class="field" id="deliveryField" style="display:none">
+        <label for="fDelivery">Delivery file</label>
+        <input id="fDelivery" type="file" accept=".pdf,.epub,.zip,.txt,image/*" />
+        <div class="hint">Required for digital items. The buyer downloads this file from their order the moment payment lands in TrybVault. Max 5 MB — PDF, EPUB, ZIP, TXT or an image.</div>
+        <div class="hint" id="deliveryPickInfo" style="color:var(--ok);font-weight:600"></div>
+      </div>
       <div class="field">
         <label for="fCat">Category</label>
         <select id="fCat"></select>
@@ -603,8 +621,9 @@ var S = {
   type:"all", cat:"All categories", q:"",
   currentId:null, deal:null, payMethod:null,
   photoBlob:null, photoPreviewUrl:null,
+  deliveryFile:null, deliveryMap:{}, deliveryMeta:{},
   sellType:"physical", sellDeal:"both",
-  ordersSeg:"buying", afterLogin:null, detectedCountry:null
+  ordersSeg:"buying", afterLogin:null, detectedCountry:null, disputeFor:null
 };
 
 function $(id){ return document.getElementById(id); }
@@ -882,6 +901,7 @@ function loadListings(){
       var ids = [];
       S.listings.forEach(function(l){ if(ids.indexOf(l.seller_id) === -1) ids.push(l.seller_id); });
       renderGrid();
+      checkDelivery(S.listings.map(function(l){ return l.id; })).then(function(){ renderGrid(); refreshInstantLine(); }).catch(function(){});
       fetchProfiles(ids).then(function(){ return fetchStats(ids); }).then(function(){ renderGrid(); if(S.currentId) refreshDetailSeller(); }).catch(function(){});
     }).catch(function(){ S.listingsError = true; S.listingsLoaded = true; renderGrid(); });
 }
@@ -937,7 +957,8 @@ function renderGrid(){
       '<span class="body"><span class="price">'+fmt(l.price_ngn)+'</span>' +
       (loc ? '<span class="price-local">'+esc(loc)+'</span>' : '') +
       '<span class="title">'+esc(l.title)+'</span>' +
-      '<span class="meta">'+esc(sellerName(l.seller_id))+' · '+(sc ? esc(sc.flag+' '+sc.name)+' · ' : '')+esc(l.location)+' · '+(l.kind==="digital"?"Digital":"Physical")+'</span></span>';
+      '<span class="meta">'+esc(sellerName(l.seller_id))+' · '+(sc ? esc(sc.flag+' '+sc.name)+' · ' : '')+esc(l.location)+' · '+(l.kind==="digital"?"Digital":"Physical")+'</span>' +
+      (l.kind==="digital" && S.deliveryMap[l.id] ? '<span class="instant-badge">⚡ Instant delivery</span>' : '') + '</span>';
     card.addEventListener("click", function(){ openDetail(l.id); });
     grid.appendChild(card);
   });
@@ -945,6 +966,13 @@ function renderGrid(){
 function findListing(id){ for(var i=0;i<S.listings.length;i++) if(S.listings[i].id===id) return S.listings[i]; return null; }
 
 /* ---------- Detail ---------- */
+function refreshInstantLine(){
+  var el = $("instantLine");
+  if(!el || !S.currentId) return;
+  var l = findListing(S.currentId);
+  el.textContent = (l && l.kind==="digital" && S.deliveryMap[l.id])
+    ? "⚡ Delivered instantly after payment — the download appears in your order. Payment releases when you confirm — or automatically 48 hours after download." : "";
+}
 function refreshDetailSeller(){
   var el = $("sellerZone");
   if(el && S.currentId){ var l = findListing(S.currentId); if(l) el.innerHTML = sellerCardHTML(l); }
@@ -983,7 +1011,8 @@ function openDetail(id){
     '<div class="detail-photo">' + (l.photo_url ? '<img src="'+esc(l.photo_url)+'" alt="'+esc(l.title)+'" />' : coverHTML(l)) + '</div>' +
     '<div class="detail-head"><div class="detail-price" id="detailPrice">'+detailPriceHTML(l)+'</div>' +
     '<h2 class="detail-title">'+esc(l.title)+'</h2>' +
-    '<div class="detail-meta">'+esc(l.location)+' · '+(isDigital ? 'Digital — delivered in chat' : 'Physical item')+' · '+esc(l.category)+'</div></div>' +
+    '<div class="detail-meta">'+esc(l.location)+' · '+(isDigital ? 'Digital — delivered in chat' : 'Physical item')+' · '+esc(l.category)+'</div>' +
+    '<p class="instant-line" id="instantLine">'+(isDigital && S.deliveryMap[l.id] ? '⚡ Delivered instantly after payment — the download appears in your order. Payment releases when you confirm — or automatically 48 hours after download.' : '')+'</p></div>' +
     '<div class="detail-desc"><h3>About this item</h3>'+esc(l.description || "No description provided — message the seller on TrybChat for details.")+'</div>' +
     '<div class="seller-card" id="sellerZone">' + sellerCardHTML(l) + '</div>' +
     '<div id="dealZone"></div>' +
@@ -1080,7 +1109,14 @@ var ORDER_ERRORS = {
   not_signed_in: "Sign in with your TrybNetwork account first.",
   amount_too_small: "That price is too small to hold from Main Balance.",
   bank_transfer_ng_only: "Bank transfer is available in Nigeria only.",
-  bad_combo: "That payment combination isn\u2019t available for this item."
+  bad_combo: "That payment combination isn\u2019t available for this item.",
+  in_dispute: "This order is under dispute review — TrybVault is looking into it.",
+  already_downloaded: "You\u2019ve already downloaded this item, so a self-service refund isn\u2019t available. If there\u2019s a genuine problem, use Report a problem."
+};
+var DISPUTE_ERRORS = {
+  not_buyer: "Only the buyer can report a problem on this order.",
+  reason_required: "Tell us what went wrong first.",
+  wrong_state: "A problem can\u2019t be reported on this order right now."
 };
 function placeOrder(){
   var l = findListing(S.currentId); if(!l || !S.deal) return;
@@ -1120,8 +1156,12 @@ function loadOrders(){
       var ids = [];
       S.orders.forEach(function(o){ if(ids.indexOf(o.listing_id)===-1) ids.push(o.listing_id); });
       if(ids.length){
+        fetchDeliveryMeta(ids).then(function(){ if($("view-profile").classList.contains("active")) renderOrdersInto(); }).catch(function(){});
+      }
+      if(ids.length){
         sb.from("tm_listings").select("id, title, photo_url, kind").in("id", ids).then(function(lr){
           (lr.data||[]).forEach(function(l){ S["listing_"+l.id] = l; });
+          checkDelivery(ids).then(function(){ if($("view-profile").classList.contains("active")) renderOrdersInto(); }).catch(function(){});
           if($("view-profile").classList.contains("active")) renderOrdersInto();
         }).catch(function(){});
       }
@@ -1141,6 +1181,9 @@ function loadMyListings(){
   sb.from("tm_listings").select("*").eq("seller_id", S.user.id).order("created_at",{ascending:false})
     .then(function(r){
       S.myListings = r.data || [];
+      checkDelivery(S.myListings.map(function(l){ return l.id; })).then(function(){
+        if($("view-profile").classList.contains("active")) renderProfile();
+      }).catch(function(){});
       if($("view-profile").classList.contains("active")) renderProfile();
     }).catch(function(){});
 }
@@ -1170,25 +1213,40 @@ function orderCardHTML(o){
     '<div class="o-price">'+fmt(o.amount_ngn)+'<small>'+fmtUSD(o.amount_usd)+'</small></div></div>' +
     '<span class="method-stamp">'+esc(methodLabel(o))+'</span>';
   if(o.path==="escrow"){
-    if(o.status==="completed") h += '<span class="held-stamp released">Funds released</span>';
+    if(o.status==="disputed") h += '<span class="held-stamp">Under review</span>';
+    else if(o.status==="completed") h += '<span class="held-stamp released">Funds released</span>';
     else if(o.funds_held) h += '<span class="held-stamp">Funds held in TrybVault</span>';
   }
   if(o.status==="cancelled"){
     h += '<p style="color:var(--danger);font-weight:700;margin:12px 0 0">This order was cancelled.' + (o.funds_held ? '' : ' Any held funds were refunded to the buyer\u2019s Main Balance.') + '</p>';
     return h;
   }
+  if(o.status==="disputed"){
+    h += '<div class="awaiting"><b>Dispute opened — TrybVault is reviewing.</b> ' +
+      (isBuyer ? 'Your payment stays frozen until it\u2019s resolved.' : 'The payment stays frozen in TrybVault until it\u2019s resolved.') +
+      (o.dispute_reason ? '<br/>Reason given: ' + esc(o.dispute_reason) : '') + '</div>';
+    return h;
+  }
   if(o.status==="awaiting_transfer_confirmation"){
     h += '<div class="awaiting">Awaiting transfer confirmation — send <b>'+fmt(o.amount_ngn)+'</b> to '+BANK.bank+' <b>'+BANK.number+'</b> ('+BANK.name+') with reference <span class="ref-code" data-copy="'+transferRef(o)+'" title="Tap to copy">'+transferRef(o)+'</span>. Include <b>TrybMart</b> in your transfer reference so we can validate your payment quickly. TrybVault confirms your transfer before the order shows Paid.</div>';
   } else if(o.path==="escrow"){
     var stage = o.status==="paid_into_vault" ? 1 : (o.status==="delivered" ? 2 : (o.status==="completed" ? 4 : 0));
+    var isDigitalOrder = !!(l && l.kind==="digital");
+    var steps = VAULT_STEPS.map(function(s, i){
+      if(i===1 && isDigitalOrder) return { name:"Delivered (download)", sub:"The buyer downloads the file from this order" };
+      return s;
+    });
     h += '<div class="timeline">';
-    VAULT_STEPS.forEach(function(s, i){
+    steps.forEach(function(s, i){
       var cls = i < stage ? "done" : (i === stage && stage < 4 ? "now" : "pending");
       if(stage >= 4) cls = "done";
       h += '<div class="tl-step '+cls+'"><span class="tl-dot">'+(cls==="done" ? "✓" : (i+1))+'</span><span><span class="tl-name">'+s.name+'</span><br/><span class="tl-sub">'+s.sub+'</span></span></div>';
     });
     h += '</div>';
-    if(o.status==="completed") h += '<p style="color:var(--ok);font-weight:700;margin:10px 0 0">Deal complete — funds released to the seller.</p>';
+    if(o.status==="completed"){
+      h += '<p style="color:var(--ok);font-weight:700;margin:10px 0 0">Deal complete — funds released to the seller.</p>';
+      if(o.dispute_outcome==="auto_released") h += '<p class="auto-note">Auto-released to the seller 48 hours after delivery.</p>';
+    }
   } else {
     if(o.status==="meetup_arranged"){
       h += '<p style="color:var(--muted);font-size:14px;margin:12px 0 0;line-height:1.55">Meet in a public place, inspect the item, then '+(o.payment_method==="cash" ? 'hand over the cash.' : 'complete the payment.')+' Message '+(isBuyer ? 'the seller' : 'the buyer')+' on TrybChat to fix a time.</p>' +
@@ -1201,6 +1259,12 @@ function orderCardHTML(o){
   }
   /* actions */
   var acts = "";
+  if(isBuyer && l && l.kind==="digital" && S.deliveryMap[o.listing_id] &&
+     (o.status==="paid_into_vault" || o.status==="delivered" || o.status==="completed")){
+    var dmeta = S.deliveryMeta[o.listing_id];
+    var dlLabel = (dmeta && dmeta.file_name) ? "⬇ Download " + esc(dmeta.file_name) : "⬇ Download file";
+    acts += '<button class="btn btn-navy block" data-act="download" data-id="'+o.id+'">'+dlLabel+'</button>';
+  }
   if(o.path==="escrow" && !isBuyer && o.status==="paid_into_vault")
     acts += '<button class="btn btn-navy block" data-act="deliver" data-id="'+o.id+'">Mark as delivered</button>';
   if(isBuyer && o.status==="delivered")
@@ -1212,7 +1276,22 @@ function orderCardHTML(o){
     acts += '<button class="btn btn-danger block" data-act="cancel" data-id="'+o.id+'">Cancel order</button>' +
             '<p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;text-align:center">Cancelling ends this deal.'+refundNote+'</p>';
   }
+  if(isBuyer && o.path==="escrow" && o.funds_held && (o.status==="paid_into_vault" || o.status==="delivered")){
+    if(S.disputeFor === o.id){
+      acts += '<div class="dispute-form"><label for="disputeText-'+o.id+'">What went wrong?</label>' +
+        '<textarea id="disputeText-'+o.id+'" data-dispute-text rows="3" maxlength="500" placeholder="Describe the problem — e.g. the file isn\u2019t what the listing described."></textarea>' +
+        '<div class="dispute-btns"><button class="btn btn-navy" data-act="dispute-submit" data-id="'+o.id+'">Open dispute</button>' +
+        '<button class="btn btn-ghost" data-act="dispute-cancel" data-id="'+o.id+'">Cancel</button></div></div>';
+    } else {
+      acts += '<button class="text-act" data-act="dispute" data-id="'+o.id+'">Report a problem</button>';
+    }
+  }
   if(acts) h += '<div class="order-actions">'+acts+'</div>';
+  if(isBuyer && l && l.kind==="digital" && o.status==="delivered" && o.downloaded_at){
+    var relAt = new Date(new Date(o.downloaded_at).getTime() + 48*3600*1000);
+    var relStr = isNaN(relAt) ? "" : relAt.toLocaleString("en-GB", { weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" });
+    h += '<p class="auto-note">Payment auto-releases to the seller 48 hours after your download' + (relStr ? ' (' + esc(relStr) + ')' : '') + ' if you don\u2019t confirm or report a problem.</p>';
+  }
   /* rating */
   if(isBuyer && o.status==="completed"){
     var mine = S.myRatings[o.id];
@@ -1247,6 +1326,77 @@ function renderOrdersInto(){
 }
 function orderAction(b){
   var act = b.getAttribute("data-act"), id = b.getAttribute("data-id");
+  if(act==="dispute"){
+    S.disputeFor = id;
+    renderOrdersInto();
+    var ta = $("disputeText-" + id);
+    if(ta) ta.focus();
+    return;
+  }
+  if(act==="dispute-cancel"){
+    S.disputeFor = null;
+    renderOrdersInto();
+    return;
+  }
+  if(act==="dispute-submit"){
+    var card = b.closest ? b.closest(".order-card") : null;
+    var txt = card ? card.querySelector("[data-dispute-text]") : null;
+    var reason = txt ? txt.value.trim() : "";
+    if(!reason){ toast("Tell us what went wrong first."); if(txt) txt.focus(); return; }
+    b.disabled = true; b.textContent = "Opening dispute…";
+    sb.rpc("tm_dispute_order", { p_order: id, p_reason: reason }).then(function(r){
+      if(r.error || (r.data && !r.data.ok)){
+        var code = (r.data && r.data.error) || "";
+        toast(DISPUTE_ERRORS[code] || ORDER_ERRORS[code] || "Couldn\u2019t open that dispute — try again.");
+        b.disabled = false; b.textContent = "Open dispute";
+        return;
+      }
+      S.disputeFor = null;
+      toast("Dispute opened — your payment stays frozen in TrybVault while it\u2019s reviewed");
+      loadOrders();
+    }).catch(function(){
+      toast("Network error — try again.");
+      b.disabled = false; b.textContent = "Open dispute";
+    });
+    return;
+  }
+  if(act==="download"){
+    var oldLabel = b.textContent;
+    b.disabled = true; b.textContent = "Preparing download…";
+    sb.rpc("tm_get_delivery", { p_order: id }).then(function(r){
+      var d = r.data || {};
+      if(r.error || !d.ok){
+        var code = d.error || "";
+        toast(GET_DELIVERY_ERRORS[code] || "Couldn\u2019t fetch that file — try again.");
+        b.disabled = false; b.textContent = oldLabel;
+        if(code) renderOrdersInto();
+        return;
+      }
+      try {
+        var bin = atob(d.content_b64);
+        var bytes = new Uint8Array(bin.length);
+        for(var i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+        var blob = new Blob([bytes], { type: d.mime || "application/octet-stream" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url; a.download = d.file_name || "trybmart-download";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 5000);
+        b.textContent = "⬇ Download " + (d.file_name || "file");
+        toast("Downloading " + (d.file_name || "your file") + "…");
+      } catch(e){
+        toast("Your browser couldn\u2019t start that download — try again.");
+        b.textContent = oldLabel;
+      }
+      b.disabled = false;
+      /* First download on an escrow order marks it delivered server-side. */
+      loadOrders();
+    }).catch(function(){
+      toast("Network error — try again.");
+      b.disabled = false; b.textContent = oldLabel;
+    });
+    return;
+  }
   if(act==="rate"){
     var stars = parseInt(b.getAttribute("data-stars"), 10);
     b.parentNode.querySelectorAll(".rate-star").forEach(function(s){ s.classList.toggle("on", parseInt(s.getAttribute("data-stars"),10) <= stars); });
@@ -1268,7 +1418,8 @@ function orderAction(b){
   b.disabled = true; b.textContent = "Working…";
   sb.rpc(rpc, { p_order: id }).then(function(r){
     if(r.error || (r.data && !r.data.ok)){
-      toast("That action isn\u2019t available for this order right now.");
+      var code = (r.data && r.data.error) || "";
+      toast(ORDER_ERRORS[code] || "That action isn\u2019t available for this order right now.");
       b.disabled = false;
       renderOrdersInto();
       return;
@@ -1303,8 +1454,14 @@ function renderProfile(){
   } else {
     listingsHTML = S.myListings.map(function(l){
       var thumb = l.photo_url ? '<img src="'+esc(l.photo_url)+'" alt="" />' : '<span class="o-thumb">'+esc(initials(l.title))+'</span>';
+      var dl = "";
+      if(l.kind==="digital"){
+        var has = S.deliveryMap[l.id];
+        dl = '<div class="l-sub">' + (has === undefined ? "Checking delivery file…" : (has ? "⚡ Instant delivery file attached" : "No delivery file yet — buyers can\u2019t download instantly")) + '</div>' +
+             '<button class="btn btn-navy small" data-attach="'+l.id+'" style="margin-top:6px">' + (has ? "Replace file" : "Attach delivery file") + '</button>';
+      }
       return '<div class="listing-row">'+thumb+'<div style="flex:1;min-width:0"><div class="l-title">'+esc(l.title)+'</div>' +
-        '<div class="l-sub">'+fmt(l.price_ngn)+' · '+esc(l.location)+'</div></div>' +
+        '<div class="l-sub">'+fmt(l.price_ngn)+' · '+esc(l.location)+'</div>' + dl + '</div>' +
         '<span class="status-chip'+(l.status==="sold" ? " sold" : "")+'">'+esc(l.status)+'</span>' +
         (l.status==="active" ? '<button class="btn btn-danger small" data-remove="'+l.id+'">Remove</button>' : '') + '</div>';
     }).join("");
@@ -1320,6 +1477,9 @@ function renderProfile(){
       '<button type="button" data-seg="selling" class="'+(S.ordersSeg==="selling" ? "active" : "")+'">Selling</button></div>' +
     '<div id="ordersZone"></div>' +
     '<button class="btn btn-ghost block" id="signOutBtn" style="margin-top:22px">Sign out</button>';
+  zone.querySelectorAll("[data-attach]").forEach(function(b){
+    b.addEventListener("click", function(){ attachDelivery(b.getAttribute("data-attach"), b); });
+  });
   zone.querySelectorAll("[data-remove]").forEach(function(b){
     b.addEventListener("click", function(){
       var id = b.getAttribute("data-remove");
@@ -1354,6 +1514,7 @@ function segWire(id, cb){
 }
 segWire("fTypeSeg", function(v){
   S.sellType = v;
+  $("deliveryField").style.display = v==="digital" ? "" : "none";
   $("locHint").textContent = v==="digital"
     ? "Digital items are delivered in chat — location can be \u201CRemote\u201D."
     : "Where the buyer meets you or where the item ships from.";
@@ -1367,6 +1528,113 @@ segWire("fDealSeg", function(v){
     document.querySelectorAll("#fDealSeg button").forEach(function(x, i){ x.classList.toggle("active", i===0); });
     S.sellDeal = "both"; return; }
   S.sellDeal = v;
+});
+/* ---------- Digital delivery files (instant delivery) ---------- */
+var DELIVERY_MAX = 5*1024*1024;
+var DELIVERY_ERRORS = {
+  not_seller: "Only the seller can attach a delivery file.",
+  not_digital: "Delivery files are for digital listings only.",
+  file_too_large: "That file is over 5 MB — pick a smaller one.",
+  empty_file: "That file looks empty — pick another one."
+};
+var GET_DELIVERY_ERRORS = {
+  not_paid: "Available once your payment is confirmed",
+  no_file_attached: "The seller hasn\u2019t attached the file yet — message them on TrybChat",
+  not_buyer: "Only the buyer can download this file."
+};
+function readFileB64(file){
+  return new Promise(function(resolve, reject){
+    var reader = new FileReader();
+    reader.onload = function(){
+      var s = String(reader.result || "");
+      var comma = s.indexOf(",");
+      resolve(comma > -1 ? s.slice(comma + 1) : s);
+    };
+    reader.onerror = function(){ reject(new Error("read failed")); };
+    reader.readAsDataURL(file);
+  });
+}
+function setDeliveryFile(listingId, file){
+  return readFileB64(file).then(function(b64){
+    return sb.rpc("tm_set_delivery_file", { p_listing: listingId, p_name: file.name, p_mime: file.type || "application/octet-stream", p_b64: b64 });
+  }).then(function(r){
+    if(r.error || (r.data && !r.data.ok)){
+      var code = (r.data && r.data.error) || "";
+      return { ok:false, code:code, message: DELIVERY_ERRORS[code] || "Couldn\u2019t attach that file — try again." };
+    }
+    S.deliveryMap[listingId] = true;
+    return { ok:true };
+  });
+}
+function checkDelivery(ids){
+  if(!sb || !ids || !ids.length) return Promise.resolve();
+  var todo = [];
+  ids.forEach(function(id){ if(id && S.deliveryMap[id] === undefined && todo.indexOf(id) === -1) todo.push(id); });
+  if(!todo.length) return Promise.resolve();
+  return Promise.all(todo.map(function(id){
+    return sb.rpc("tm_has_delivery", { p_listing: id }).then(function(r){
+      /* Cache ONLY successful responses. An errored/timed-out check must
+         leave the listing uncached so the next render retries — caching
+         it as "no file" would hide the badge/button until reload. */
+      if(!r.error) S.deliveryMap[id] = (r.data === true);
+    }).catch(function(){});
+  }));
+}
+/* File name/size for a listing's delivery file, so a paid order's download
+   button can name the file before the first tap. Only successful responses
+   are cached (a null result is a real answer: no file attached). */
+function fetchDeliveryMeta(ids){
+  if(!sb || !ids || !ids.length) return Promise.resolve();
+  var todo = [];
+  ids.forEach(function(id){ if(id && S.deliveryMeta[id] === undefined && todo.indexOf(id) === -1) todo.push(id); });
+  if(!todo.length) return Promise.resolve();
+  return Promise.all(todo.map(function(id){
+    return sb.rpc("tm_delivery_meta", { p_listing: id }).then(function(r){
+      if(r.error) return;
+      var d = r.data || null;
+      if(Array.isArray(d)) d = d[0] || null;
+      S.deliveryMeta[id] = (d && d.file_name) ? { file_name: d.file_name, size_bytes: d.size_bytes } : null;
+    }).catch(function(){});
+  }));
+}
+function attachDelivery(listingId, btn){
+  var inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = ".pdf,.epub,.zip,.txt,image/*";
+  inp.addEventListener("change", function(){
+    var f = inp.files && inp.files[0];
+    if(!f) return;
+    if(f.size > DELIVERY_MAX){ toast("That file is over 5 MB — the delivery file limit is 5 MB."); return; }
+    if(f.size === 0){ toast("That file looks empty — pick another one."); return; }
+    if(btn){ btn.disabled = true; btn.textContent = "Attaching…"; }
+    setDeliveryFile(listingId, f).then(function(res){
+      if(res.ok) toast("Delivery file attached — buyers now download it instantly after payment.");
+      else toast(res.message);
+      if($("view-profile").classList.contains("active")) renderProfile();
+      renderGrid();
+    }).catch(function(){
+      toast("Network error — try again.");
+      if($("view-profile").classList.contains("active")) renderProfile();
+    });
+  });
+  inp.click();
+}
+$("fDelivery").addEventListener("change", function(e){
+  var file = e.target.files && e.target.files[0];
+  var info = $("deliveryPickInfo");
+  if(!file){ S.deliveryFile = null; info.textContent = ""; return; }
+  if(file.size > DELIVERY_MAX){
+    toast("That file is over 5 MB — the delivery file limit is 5 MB. Pick a smaller file.");
+    e.target.value = ""; S.deliveryFile = null; info.textContent = "";
+    return;
+  }
+  if(file.size === 0){
+    toast("That file looks empty — pick another one.");
+    e.target.value = ""; S.deliveryFile = null; info.textContent = "";
+    return;
+  }
+  S.deliveryFile = file;
+  info.textContent = "Ready: " + file.name + " (" + Math.max(1, Math.round(file.size/1024)) + " KB) — buyers download it from their order right after payment.";
 });
 $("fPhoto").addEventListener("change", function(e){
   var file = e.target.files && e.target.files[0];
@@ -1459,6 +1727,8 @@ $("sellForm").addEventListener("submit", function(e){
   if(!title || !loc){ toast("Fill in the title and a location."); return; }
   if(!priceNgn){ toast(sellerCountry().code === "NG" ? "Enter a price of ₦100 or more." : "Enter a price in " + sellerCountry().ccy + "."); return; }
   if(priceNgn < 100){ toast("That price converts to " + fmt(priceNgn) + " — listings start at ₦100. Raise the price."); return; }
+  if(S.sellType==="digital" && !S.deliveryFile){ toast("Pick the delivery file first — digital buyers download it from their order right after payment."); return; }
+  var pendingFile = S.deliveryFile;
   var btn = $("sellSubmit");
   btn.disabled = true; btn.textContent = "Publishing…";
   uploadPhoto().then(function(photoUrl){
@@ -1474,20 +1744,40 @@ $("sellForm").addEventListener("submit", function(e){
       escrow_enabled: S.sellType === "digital" ? true : (S.sellDeal === "both")
     }).select("id").single();
   }).then(function(r){
-    btn.disabled = false; btn.textContent = "Publish listing";
-    if(r.error){ toast("Couldn\u2019t publish — " + (r.error.message || "try again.")); return; }
-    toast("Your listing is live on TrybMart!");
-    e.target.reset(); S.photoBlob = null; S.photoPreviewUrl = null;
-    updatePriceConv();
-    $("photoPreview").classList.remove("show");
-    S.type = "all"; S.cat = "All categories"; S.q = "";
-    $("searchInput").value = "";
-    document.querySelectorAll("#typeRow .chip").forEach(function(c, i){ c.classList.toggle("active", i===0); });
-    renderCats();
-    loadMyListings();
-    loadListings();
-    show("browse");
-    setTimeout(function(){ if(r.data && r.data.id) openDetail(r.data.id); }, 400);
+    if(r.error){ btn.disabled = false; btn.textContent = "Publish listing"; toast("Couldn\u2019t publish — " + (r.error.message || "try again.")); return; }
+    var newId = r.data && r.data.id;
+    function finish(note){
+      btn.disabled = false; btn.textContent = "Publish listing";
+      toast(note);
+      e.target.reset(); S.photoBlob = null; S.photoPreviewUrl = null; S.deliveryFile = null;
+      var dpi = $("deliveryPickInfo"); if(dpi) dpi.textContent = "";
+      updatePriceConv();
+      $("photoPreview").classList.remove("show");
+      S.type = "all"; S.cat = "All categories"; S.q = "";
+      $("searchInput").value = "";
+      document.querySelectorAll("#typeRow .chip").forEach(function(c, i){ c.classList.toggle("active", i===0); });
+      renderCats();
+      loadMyListings();
+      loadListings();
+      show("browse");
+      setTimeout(function(){ if(newId) openDetail(newId); }, 400);
+    }
+    if(S.sellType==="digital" && pendingFile && newId){
+      btn.textContent = "Attaching delivery file…";
+      setDeliveryFile(newId, pendingFile).then(function(res){
+        if(res.ok){
+          finish("Listing is live — buyers get the file instantly after payment.");
+        } else {
+          S.deliveryMap[newId] = false;
+          finish("Listing is live, but the delivery file didn\u2019t attach: " + res.message + " It has no instant delivery yet — attach it from Profile → My listings.");
+        }
+      }).catch(function(){
+        S.deliveryMap[newId] = false;
+        finish("Listing is live, but the delivery file didn\u2019t attach. It has no instant delivery yet — attach it from Profile → My listings.");
+      });
+    } else {
+      finish("Your listing is live on TrybMart!");
+    }
   }).catch(function(){
     btn.disabled = false; btn.textContent = "Publish listing";
     toast("Network error — check your connection and try again.");
