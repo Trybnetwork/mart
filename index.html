@@ -377,6 +377,14 @@ footer .fine{font-size:12px;color:#8B90B8;margin-top:16px}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .section-title{font-size:20px;font-weight:800;margin:18px 0 4px}
 .section-sub{color:var(--muted);font-size:14px;margin:0 0 8px}
+
+/* ---------- Admin queue ---------- */
+.admin-count{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;
+  padding:0 7px;border-radius:999px;background:var(--navy);color:#fff;font-size:13px;font-weight:800;
+  vertical-align:3px;margin-left:4px}
+.queue-title{font-size:15.5px;font-weight:800;margin:16px 0 8px}
+.q-line{font-size:13.5px;color:var(--muted);margin:8px 0 0;line-height:1.55}
+.q-line b{color:var(--ink)}
 </style>
 </head>
 <body>
@@ -655,7 +663,8 @@ var S = {
   photoBlob:null, photoPreviewUrl:null,
   deliveryFile:null, deliveryMap:{}, deliveryMeta:{},
   sellType:"physical", sellDeal:"both",
-  ordersSeg:"buying", afterLogin:null, detectedCountry:null, disputeFor:null
+  ordersSeg:"buying", afterLogin:null, detectedCountry:null, disputeFor:null,
+  adminTransfers:[], adminDisputes:[], adminLoaded:false, adminLoading:false, adminError:false
 };
 
 function $(id){ return document.getElementById(id); }
@@ -664,6 +673,7 @@ function fmtUSD(n){ return "$" + Number(n||0).toLocaleString("en-US",{minimumFra
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 function shieldSVG(size){ return '<svg width="'+size+'" height="'+Math.round(size*27/24)+'" viewBox="0 0 24 27" fill="none" aria-hidden="true"><path d="M12 0 2.5 3.6v7.2c0 6.9 4 12.4 9.5 15.2 5.5-2.8 9.5-8.3 9.5-15.2V3.6L12 0Z" fill="#17A34A"/><path d="m8.2 12.6 2.6 2.6 5-5.4" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
 function monthYear(d){ if(!d) return ""; var dt = new Date(d); if(isNaN(dt)) return ""; return dt.toLocaleDateString("en-GB",{month:"short", year:"numeric"}); }
+function fmtWhen(d){ if(!d) return ""; var dt = new Date(d); if(isNaN(dt)) return ""; return dt.toLocaleString("en-GB",{day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit"}); }
 function initials(name){ return String(name||"?").trim().split(/\s+/).map(function(w){return w[0];}).join("").slice(0,2).toUpperCase(); }
 function usdOf(ngn){ return Math.round((Number(ngn)/RATE)*100)/100; }
 
@@ -876,7 +886,7 @@ function requireAuth(after){
 function loadOwnAccount(){
   if(!sb || !S.user) return;
   var uid = S.user.id;
-  sb.from("tn_profiles").select("id, full_name, username, avatar_url, created_at, country").eq("id", uid).maybeSingle()
+  sb.from("tn_profiles").select("id, full_name, username, avatar_url, created_at, country, is_admin").eq("id", uid).maybeSingle()
     .then(function(r){
       if(r.data){ S.profile = r.data; S.profiles[uid] = r.data; renderHead(); refreshCountrySensitive(); if($("view-profile").classList.contains("active")) renderProfile(); }
       else {
@@ -896,7 +906,7 @@ function loadOwnAccount(){
 function setUser(user){
   var was = S.user && S.user.id;
   S.user = user || null;
-  if(!S.user){ S.profile = null; S.wallet = null; S.orders = []; S.myListings = []; }
+  if(!S.user){ S.profile = null; S.wallet = null; S.orders = []; S.myListings = []; S.adminTransfers = []; S.adminDisputes = []; S.adminLoaded = false; S.adminLoading = false; S.adminError = false; }
   renderHead();
   if(S.user && S.user.id !== was){ loadOwnAccount(); loadOrders(); loadMyListings(); }
 }
@@ -1530,6 +1540,129 @@ function orderAction(b){
   }).catch(function(){ toast("Network error — try again."); renderOrdersInto(); });
 }
 
+/* ---------- Admin queue (TrybVault operations) ---------- */
+/* Visible only when the signed-in user's own tn_profiles row has
+   is_admin = true; the RPCs re-check admin server-side. Two jobs:
+   confirm bank transfers (tm_confirm_transfer) and resolve disputes
+   (tm_resolve_dispute). Non-admins never see the section. */
+function isAdmin(){ return !!(S.profile && S.profile.is_admin === true); }
+var ADMIN_ERRORS = {
+  not_admin: "Only TrybNetwork admins can do that.",
+  not_found: "That order no longer exists — it may already have been handled.",
+  wrong_state: "That order has already been handled — refreshing the queue."
+};
+function loadAdminQueue(){
+  if(!sb || !S.user || !isAdmin() || S.adminLoading) return;
+  S.adminLoading = true;
+  sb.from("tm_orders").select("*").in("status", ["awaiting_transfer_confirmation","disputed"]).order("created_at",{ascending:false})
+    .then(function(r){
+      S.adminLoading = false;
+      if(r.error){ S.adminError = true; renderAdminInto(); return; }
+      S.adminError = false; S.adminLoaded = true;
+      var rows = r.data || [];
+      S.adminTransfers = rows.filter(function(o){ return o.status==="awaiting_transfer_confirmation"; });
+      S.adminDisputes = rows.filter(function(o){ return o.status==="disputed"; });
+      renderAdminInto();
+      var lids = [], parties = [];
+      rows.forEach(function(o){
+        if(lids.indexOf(o.listing_id)===-1) lids.push(o.listing_id);
+        [o.buyer_id, o.seller_id].forEach(function(x){ if(parties.indexOf(x)===-1) parties.push(x); });
+      });
+      if(lids.length){
+        sb.from("tm_listings").select("id, title, photo_url, kind").in("id", lids).then(function(lr){
+          (lr.data||[]).forEach(function(l){ S["listing_"+l.id] = l; });
+          renderAdminInto();
+        }).catch(function(){});
+      }
+      if(parties.length) fetchProfiles(parties).then(function(){ renderAdminInto(); }).catch(function(){});
+    }).catch(function(){ S.adminLoading = false; S.adminError = true; renderAdminInto(); });
+}
+function adminCardTop(o, sub){
+  var l = orderListing(o);
+  var title = l ? l.title : "Listing no longer available";
+  var thumb = l && l.photo_url ? '<img src="'+esc(l.photo_url)+'" alt="" />' : '<span class="o-thumb">'+esc(initials(title))+'</span>';
+  return '<div class="order-top">'+thumb+'<div><div class="o-title">'+esc(title)+'</div>' +
+    '<div class="o-sub">'+esc(sub)+'</div></div>' +
+    '<div class="o-price">'+fmt(o.amount_ngn)+'<small>'+fmtUSD(o.amount_usd)+'</small></div></div>';
+}
+function transferCardHTML(o){
+  var h = adminCardTop(o, "Buyer: " + displayName(S.profiles[o.buyer_id], "TrybMart member") + " · " + shortCode(o));
+  h += '<p class="q-line">Ordered ' + esc(fmtWhen(o.created_at)) + ' · Expected reference: <span class="ref-code" data-copy="' + esc(transferRef(o)) + '" title="Tap to copy">' + esc(transferRef(o)) + '</span></p>';
+  h += '<div class="order-actions"><button class="btn btn-navy block" data-admin-act="confirm-transfer" data-id="'+o.id+'">Confirm payment received</button></div>';
+  return h;
+}
+function disputeCardHTML(o){
+  var h = adminCardTop(o, "Buyer: " + displayName(S.profiles[o.buyer_id], "TrybMart member") + " · Seller: " + displayName(S.profiles[o.seller_id], "TrybMart member") + " · " + shortCode(o));
+  h += '<p class="q-line"><b>Dispute reason:</b> ' + esc(o.dispute_reason || "No reason given") + '</p>';
+  h += '<p class="q-line">Disputed ' + esc(fmtWhen(o.disputed_at) || "—") + ' · <b>' + fmt(o.amount_ngn) + ' (' + fmtUSD(o.amount_usd) + ')</b> held in TrybVault</p>';
+  h += '<p class="q-line">Delivery file: ' + (o.downloaded_at ? 'downloaded by the buyer on ' + esc(fmtWhen(o.downloaded_at)) : 'not downloaded') + '</p>';
+  h += '<div class="order-actions"><div class="dispute-btns">' +
+    '<button class="btn btn-navy" data-admin-act="refund" data-id="'+o.id+'">Refund buyer</button>' +
+    '<button class="btn btn-navy" data-admin-act="release" data-id="'+o.id+'">Release to seller</button></div>' +
+    '<p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;text-align:center">Resolving is final — the held money moves right away.</p></div>';
+  return h;
+}
+function renderAdminInto(){
+  var zone = $("adminZone");
+  if(!zone || !S.user || !isAdmin()) return;
+  var badge = $("adminCount");
+  if(badge){
+    if(S.adminLoaded){ badge.textContent = String(S.adminTransfers.length + S.adminDisputes.length); badge.style.display = ""; }
+    else badge.style.display = "none";
+  }
+  if(S.adminError && !S.adminLoaded){
+    zone.innerHTML = '<p class="q-line">Couldn\u2019t load the admin queue — check your connection.</p><button class="btn btn-navy small" id="adminRetry" style="margin-top:10px">Retry</button>';
+    $("adminRetry").addEventListener("click", function(){ S.adminError = false; renderAdminInto(); loadAdminQueue(); });
+    return;
+  }
+  if(!S.adminLoaded){
+    zone.innerHTML = '<p class="q-line">Loading the admin queue…</p>';
+    return;
+  }
+  var h = '<h4 class="queue-title">Bank transfers awaiting confirmation</h4>';
+  if(!S.adminTransfers.length) h += '<p class="q-line">No transfers waiting</p>';
+  else h += S.adminTransfers.map(function(o){ return '<div class="order-card">' + transferCardHTML(o) + '</div>'; }).join("");
+  h += '<h4 class="queue-title">Disputes</h4>';
+  if(!S.adminDisputes.length) h += '<p class="q-line">No open disputes</p>';
+  else h += S.adminDisputes.map(function(o){ return '<div class="order-card">' + disputeCardHTML(o) + '</div>'; }).join("");
+  zone.innerHTML = h;
+  zone.querySelectorAll("[data-admin-act]").forEach(function(b){
+    b.addEventListener("click", function(){ adminAction(b); });
+  });
+}
+function adminRefresh(){ S.adminLoaded = false; renderAdminInto(); loadAdminQueue(); loadOrders(); }
+function adminAction(b){
+  var act = b.getAttribute("data-admin-act"), id = b.getAttribute("data-id");
+  if(!sb) return;
+  if(act==="confirm-transfer"){
+    b.disabled = true; b.textContent = "Confirming…";
+    sb.rpc("tm_confirm_transfer", { p_order: id }).then(function(r){
+      if(r.error){ toast(r.error.message || "Couldn\u2019t confirm that transfer — try again."); renderAdminInto(); return; }
+      if(r.data && !r.data.ok){ toast(ADMIN_ERRORS[r.data.error] || ("Couldn\u2019t confirm that transfer (" + (r.data.error || "error") + ").")); adminRefresh(); return; }
+      toast("Transfer confirmed — the order now shows Paid.");
+      adminRefresh();
+    }).catch(function(){ toast("Network error — try again."); renderAdminInto(); });
+    return;
+  }
+  if(act==="refund" || act==="release"){
+    var refund = act==="refund";
+    var label = refund ? "Refund buyer" : "Release to seller";
+    if(!b.dataset.armed){
+      b.dataset.armed = "1";
+      b.textContent = refund ? "Tap again to refund the buyer" : "Tap again to release to the seller";
+      setTimeout(function(){ if(b.isConnected){ delete b.dataset.armed; b.textContent = label; } }, 3500);
+      return;
+    }
+    b.disabled = true; b.textContent = "Working…";
+    sb.rpc("tm_resolve_dispute", { p_order: id, p_refund: refund }).then(function(r){
+      if(r.error){ toast(r.error.message || "Couldn\u2019t resolve that dispute — try again."); renderAdminInto(); return; }
+      if(r.data && !r.data.ok){ toast(ADMIN_ERRORS[r.data.error] || ("Couldn\u2019t resolve that dispute (" + (r.data.error || "error") + ").")); adminRefresh(); return; }
+      toast(refund ? "Dispute resolved — the buyer has been refunded." : "Dispute resolved — funds released to the seller.");
+      adminRefresh(); loadOwnAccount();
+    }).catch(function(){ toast("Network error — try again."); renderAdminInto(); });
+  }
+}
+
 /* ---------- Profile ---------- */
 function renderProfile(){
   var zone = $("profileZone");
@@ -1576,6 +1709,7 @@ function renderProfile(){
       '<button type="button" data-seg="buying" class="'+(S.ordersSeg==="buying" ? "active" : "")+'">Buying</button>' +
       '<button type="button" data-seg="selling" class="'+(S.ordersSeg==="selling" ? "active" : "")+'">Selling</button></div>' +
     '<div id="ordersZone"></div>' +
+    (isAdmin() ? '<h3 class="section-title">Admin queue <span class="admin-count" id="adminCount" style="display:none">0</span></h3><div id="adminZone"></div>' : '') +
     '<button class="btn btn-ghost block" id="signOutBtn" style="margin-top:22px">Sign out</button>';
   zone.querySelectorAll("[data-attach]").forEach(function(b){
     b.addEventListener("click", function(){ attachDelivery(b.getAttribute("data-attach"), b); });
@@ -1600,6 +1734,7 @@ function renderProfile(){
   });
   $("signOutBtn").addEventListener("click", doSignOut);
   renderOrdersInto();
+  if(isAdmin()){ renderAdminInto(); if(!S.adminLoaded && !S.adminError) loadAdminQueue(); }
 }
 
 /* ---------- Sell form ---------- */
