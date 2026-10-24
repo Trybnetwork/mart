@@ -177,12 +177,18 @@ header.site{position:sticky;top:0;z-index:60;background:var(--navy);color:#fff;
 /* ---------- Payment ---------- */
 .pay-opt{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;background:var(--surface);
   border:1.5px solid var(--line);border-radius:14px;padding:14px;margin:0 0 10px}
-.pay-opt.selected{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,162,75,.22)}
+.pay-opt.selected{border-color:var(--navy);box-shadow:0 0 0 3px rgba(11,17,50,.22)}
 .pay-opt.disabled{opacity:.55}
 .pay-opt .radio{width:20px;height:20px;border-radius:50%;border:2px solid var(--muted);flex:none;margin-top:2px;position:relative}
-.pay-opt.selected .radio{border-color:var(--gold)}
-.pay-opt.selected .radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--gold)}
-.pay-opt .p-name{font-weight:700;font-size:15.5px}
+.pay-opt.selected .radio{border-color:var(--navy)}
+.pay-opt.selected .radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--navy)}
+.pay-opt .p-name{font-weight:700;font-size:15.5px;color:var(--navy)}
+@media (prefers-color-scheme: dark){
+  .pay-opt .p-name{color:#C9CDF5}
+  .pay-opt.selected{border-color:#C9CDF5;box-shadow:0 0 0 3px rgba(201,205,245,.25)}
+  .pay-opt.selected .radio{border-color:#C9CDF5}
+  .pay-opt.selected .radio::after{background:#C9CDF5}
+}
 .pay-opt .p-sub{font-size:13px;color:var(--muted);line-height:1.45;margin-top:2px}
 .pay-opt .p-sub.warn{color:var(--danger);font-weight:600}
 .transfer-box{background:var(--surface-2);border-radius:12px;padding:13px 15px;font-size:14px;line-height:1.7;margin:2px 0 12px}
@@ -1093,7 +1099,7 @@ function payOptionsHTML(l){
   if(isNG){
     h += opt("bank_transfer", "Bank Transfer", "Transfer to the TrybVault escrow account. TrybVault confirms your transfer before the order shows Paid.");
   } else {
-    h += '<p class="pay-note">Bank transfer is available in Nigeria only.</p>';
+    h += '<p class="pay-note">Bank transfer is not available in your country.</p>';
   }
   if(S.deal==="meet"){
     h += opt("cash", "Cash", "Pay the seller in cash when you meet and inspect the item.");
@@ -1137,7 +1143,7 @@ var ORDER_ERRORS = {
   listing_inactive: "This listing is no longer available.",
   not_signed_in: "Sign in with your TrybNetwork account first.",
   amount_too_small: "That price is too small to hold from Main Balance.",
-  bank_transfer_ng_only: "Bank transfer is available in Nigeria only.",
+  bank_transfer_ng_only: "Bank transfer is not available in your country.",
   bad_combo: "That payment combination isn\u2019t available for this item.",
   in_dispute: "This order is under dispute review — TrybVault is looking into it.",
   already_downloaded: "You\u2019ve already downloaded this item, so a self-service refund isn\u2019t available. If there\u2019s a genuine problem, use Report a problem."
