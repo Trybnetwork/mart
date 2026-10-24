@@ -110,6 +110,11 @@ header.site{position:sticky;top:0;z-index:60;background:var(--navy);color:#fff;
 .card .title{font-size:14.5px;font-weight:600;line-height:1.35;margin:0;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.7em}
 .card .meta{font-size:12.5px;color:var(--muted);line-height:1.4}
+.card .price-local{font-size:13px;color:var(--muted);font-weight:600}
+.detail-price-local{font-size:17px;color:var(--muted);font-weight:600}
+.pay-total{font-size:15px;margin:0 0 12px;line-height:1.5}
+.pay-total .pt-local{color:var(--muted);font-weight:600;font-size:13.5px}
+.pay-note{font-size:13px;color:var(--muted);margin:2px 0 12px;line-height:1.5}
 .empty{grid-column:1/-1;text-align:center;padding:56px 20px;color:var(--muted)}
 .empty h3{color:var(--ink);margin:0 0 6px;font-size:18px}
 .empty p{margin:0 0 16px}
@@ -414,8 +419,9 @@ footer .fine{font-size:12px;color:#8B90B8;margin-top:16px}
         <input id="fTitle" required maxlength="80" placeholder="e.g. Samsung Galaxy S23 — 128GB" />
       </div>
       <div class="field">
-        <label for="fPrice">Price (₦)</label>
+        <label for="fPrice" id="fPriceLabel">Price (₦)</label>
         <input id="fPrice" required type="number" min="100" step="100" placeholder="e.g. 85000" />
+        <div class="hint" id="priceConv" style="display:none"></div>
       </div>
       <div class="field">
         <label>Type</label>
@@ -538,6 +544,47 @@ Tawk_API.onLoad = function(){ try { Tawk_API.hideWidget(); } catch(e){} };
 var SUPABASE_URL = "https://zvubytosshkxpbpvgcsw.supabase.co";
 var SUPABASE_ANON_KEY = "sb_publishable_c1sl1Mw4Y5EMWjkmYSzEow_m5Yowqk0";
 var RATE = 1380;
+/* Same country table as the TrybNetwork app: rate = units of the local
+   currency per 1 USD, approximate and display-only. Canonical money in
+   TrybMart stays price_ngn; USD = price_ngn / RATE. */
+var COUNTRIES = [
+  { code: "NG", name: "Nigeria", ccy: "NGN", symbol: "₦", flag: "🇳🇬", rate: RATE },
+  { code: "GH", name: "Ghana", ccy: "GHS", symbol: "GH₵", flag: "🇬🇭", rate: 15.5 },
+  { code: "KE", name: "Kenya", ccy: "KES", symbol: "KSh", flag: "🇰🇪", rate: 129 },
+  { code: "ZA", name: "South Africa", ccy: "ZAR", symbol: "R", flag: "🇿🇦", rate: 17.8 },
+  { code: "TZ", name: "Tanzania", ccy: "TZS", symbol: "TSh", flag: "🇹🇿", rate: 2510 },
+  { code: "UG", name: "Uganda", ccy: "UGX", symbol: "USh", flag: "🇺🇬", rate: 3720 },
+  { code: "CM", name: "Cameroon", ccy: "XAF", symbol: "FCFA", flag: "🇨🇲", rate: 605 },
+  { code: "SN", name: "Senegal", ccy: "XOF", symbol: "CFA", flag: "🇸🇳", rate: 605 },
+  { code: "EG", name: "Egypt", ccy: "EGP", symbol: "E£", flag: "🇪🇬", rate: 48.5 },
+  { code: "MA", name: "Morocco", ccy: "MAD", symbol: "MAD", flag: "🇲🇦", rate: 9.9 },
+  { code: "US", name: "United States", ccy: "USD", symbol: "$", flag: "🇺🇸", rate: 1 },
+  { code: "GB", name: "United Kingdom", ccy: "GBP", symbol: "£", flag: "🇬🇧", rate: 0.79 },
+  { code: "DE", name: "Germany", ccy: "EUR", symbol: "€", flag: "🇩🇪", rate: 0.92 },
+  { code: "FR", name: "France", ccy: "EUR", symbol: "€", flag: "🇫🇷", rate: 0.92 },
+  { code: "ES", name: "Spain", ccy: "EUR", symbol: "€", flag: "🇪🇸", rate: 0.92 },
+  { code: "IT", name: "Italy", ccy: "EUR", symbol: "€", flag: "🇮🇹", rate: 0.92 },
+  { code: "NL", name: "Netherlands", ccy: "EUR", symbol: "€", flag: "🇳🇱", rate: 0.92 },
+  { code: "CA", name: "Canada", ccy: "CAD", symbol: "C$", flag: "🇨🇦", rate: 1.36 },
+  { code: "AE", name: "United Arab Emirates", ccy: "AED", symbol: "AED", flag: "🇦🇪", rate: 3.67 },
+  { code: "SA", name: "Saudi Arabia", ccy: "SAR", symbol: "SAR", flag: "🇸🇦", rate: 3.75 },
+  { code: "IN", name: "India", ccy: "INR", symbol: "₹", flag: "🇮🇳", rate: 83.5 },
+  { code: "PK", name: "Pakistan", ccy: "PKR", symbol: "Rs", flag: "🇵🇰", rate: 278 },
+  { code: "BD", name: "Bangladesh", ccy: "BDT", symbol: "৳", flag: "🇧🇩", rate: 110 },
+  { code: "PH", name: "Philippines", ccy: "PHP", symbol: "₱", flag: "🇵🇭", rate: 58.5 },
+  { code: "ID", name: "Indonesia", ccy: "IDR", symbol: "Rp", flag: "🇮🇩", rate: 15600 },
+  { code: "CN", name: "China", ccy: "CNY", symbol: "¥", flag: "🇨🇳", rate: 7.25 },
+  { code: "JP", name: "Japan", ccy: "JPY", symbol: "¥", flag: "🇯🇵", rate: 151 },
+  { code: "BR", name: "Brazil", ccy: "BRL", symbol: "R$", flag: "🇧🇷", rate: 5.5 },
+  { code: "MX", name: "Mexico", ccy: "MXN", symbol: "Mex$", flag: "🇲🇽", rate: 17.2 },
+  { code: "TR", name: "Turkey", ccy: "TRY", symbol: "₺", flag: "🇹🇷", rate: 32.5 },
+  { code: "AU", name: "Australia", ccy: "AUD", symbol: "A$", flag: "🇦🇺", rate: 1.52 }
+];
+function countryOf(code){
+  code = String(code || "").toUpperCase();
+  for (var ci = 0; ci < COUNTRIES.length; ci++) if (COUNTRIES[ci].code === code) return COUNTRIES[ci];
+  return null;
+}
 var CATEGORIES = ["Phones & Gadgets","Fashion","Gaming","Home & Living","Digital Services","Other"];
 var CHAT_URL = "https://chat.trybnetwork.com";
 var BANK = { bank:"Palmpay", number:"9130624792", name:"FUNMI FUNKE ADEDOKUN-IROKO" };
@@ -557,7 +604,7 @@ var S = {
   currentId:null, deal:null, payMethod:null,
   photoBlob:null, photoPreviewUrl:null,
   sellType:"physical", sellDeal:"both",
-  ordersSeg:"buying", afterLogin:null
+  ordersSeg:"buying", afterLogin:null, detectedCountry:null
 };
 
 function $(id){ return document.getElementById(id); }
@@ -568,6 +615,84 @@ function shieldSVG(size){ return '<svg width="'+size+'" height="'+Math.round(siz
 function monthYear(d){ if(!d) return ""; var dt = new Date(d); if(isNaN(dt)) return ""; return dt.toLocaleDateString("en-GB",{month:"short", year:"numeric"}); }
 function initials(name){ return String(name||"?").trim().split(/\s+/).map(function(w){return w[0];}).join("").slice(0,2).toUpperCase(); }
 function usdOf(ngn){ return Math.round((Number(ngn)/RATE)*100)/100; }
+
+/* ---------- Viewer country & local-currency display ---------- */
+/* Signed in: the buyer's TrybNetwork signup country (tn_profiles.country,
+   coalesced to NG like the server). Signed out: IP detection, then device
+   locale, then US — the same chain as TrybNetwork signup. */
+function viewerCountryCode(){
+  if(S.user){
+    if(S.profile && S.profile.country) return String(S.profile.country).toUpperCase();
+    return "NG";
+  }
+  return S.detectedCountry || "US";
+}
+function viewerCountry(){ return countryOf(viewerCountryCode()) || countryOf("US"); }
+function fmtLocal(usdAmount){
+  var c = viewerCountry();
+  if(!c || c.code === "NG") return "";
+  var v = Number(usdAmount) * c.rate;
+  var num = v >= 100
+    ? Math.round(v).toLocaleString("en-US")
+    : v.toLocaleString("en-US", { minimumFractionDigits:2, maximumFractionDigits:2 });
+  var sep = /^[A-Za-z]{2,}$/.test(c.symbol) ? " " : "";
+  return c.symbol + sep + num;
+}
+function localEq(ngn){ var s = fmtLocal(usdOf(ngn)); return s ? "≈ " + s : ""; }
+function sellerCountryOf(sid){
+  var st = S.stats[sid];
+  if(st && st.country) return countryOf(st.country);
+  return null;
+}
+function refreshCountrySensitive(){
+  renderGrid();
+  if($("view-detail").classList.contains("active") && S.currentId){
+    var l = findListing(S.currentId);
+    var dp = $("detailPrice");
+    if(l && dp) dp.innerHTML = detailPriceHTML(l);
+    refreshDetailSeller();
+    if(S.deal) renderDealPanel();
+  }
+  if($("view-sell").classList.contains("active")) setupSellPrice();
+}
+function deviceCountryCode(){
+  function region(loc){
+    var parts = String(loc || "").replace(/_/g, "-").split("-");
+    for(var i = 1; i < parts.length; i++) if(/^[A-Za-z]{2}$/.test(parts[i])) return parts[i].toUpperCase();
+    return "";
+  }
+  var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || ""];
+  for(var i = 0; i < langs.length; i++){ var r = region(langs[i]); if(r) return r; }
+  try { return region(Intl.DateTimeFormat().resolvedOptions().locale); } catch(e){ return ""; }
+}
+function fetchJSON(url){
+  return new Promise(function(resolve){
+    var ctl = ("AbortController" in window) ? new AbortController() : null;
+    var done = false;
+    var timer = setTimeout(function(){
+      if(done) return; done = true;
+      if(ctl){ try { ctl.abort(); } catch(e){} }
+      resolve(null);
+    }, 3500);
+    fetch(url, ctl ? { signal: ctl.signal } : {}).then(function(r){ return r.json(); }).then(function(d){
+      if(done) return; done = true; clearTimeout(timer); resolve(d);
+    }).catch(function(){
+      if(done) return; done = true; clearTimeout(timer); resolve(null);
+    });
+  });
+}
+function detectViewerCountry(){
+  fetchJSON("https://ipwho.is/").then(function(d){
+    if(d && d.country_code) return String(d.country_code);
+    return fetchJSON("https://api.country.is/").then(function(d2){ return (d2 && d2.country) ? String(d2.country) : ""; });
+  }).then(function(code){
+    code = String(code || "").toUpperCase();
+    if(!countryOf(code)) code = deviceCountryCode();
+    if(!countryOf(code)) code = "US";
+    S.detectedCountry = code;
+    if(!S.user) refreshCountrySensitive();
+  }).catch(function(){});
+}
 var toastTimer = null;
 function toast(msg){
   var t = $("toast"); t.textContent = msg; t.classList.add("show");
@@ -594,6 +719,7 @@ function show(view){
   $("fabSell").style.display = (view==="browse") ? "" : "none";
   window.scrollTo(0,0);
   if(view==="profile") renderProfile();
+  if(view==="sell") setupSellPrice();
 }
 
 /* ---------- Auth ---------- */
@@ -629,13 +755,13 @@ function requireAuth(after){
 function loadOwnAccount(){
   if(!sb || !S.user) return;
   var uid = S.user.id;
-  sb.from("tn_profiles").select("id, full_name, username, avatar_url, created_at").eq("id", uid).maybeSingle()
+  sb.from("tn_profiles").select("id, full_name, username, avatar_url, created_at, country").eq("id", uid).maybeSingle()
     .then(function(r){
-      if(r.data){ S.profile = r.data; S.profiles[uid] = r.data; renderHead(); if($("view-profile").classList.contains("active")) renderProfile(); }
+      if(r.data){ S.profile = r.data; S.profiles[uid] = r.data; renderHead(); refreshCountrySensitive(); if($("view-profile").classList.contains("active")) renderProfile(); }
       else {
         sb.rpc("tn_public_profiles", { p_ids:[uid] }).then(function(r2){
           var row = normProfiles(r2.data)[0];
-          if(row){ S.profile = row; S.profiles[uid] = row; renderHead(); }
+          if(row){ S.profile = row; S.profiles[uid] = row; renderHead(); refreshCountrySensitive(); }
         }).catch(function(){});
       }
     }).catch(function(){});
@@ -688,6 +814,7 @@ function doSignIn(){
 function doSignOut(){
   if(sb) sb.auth.signOut().catch(function(){});
   setUser(null);
+  refreshCountrySensitive();
   show("browse");
   toast("Signed out. See you soon!");
 }
@@ -705,7 +832,8 @@ function profileOf(row){
     full_name: row.full_name || row.name || row.display_name || "",
     username: row.username || "",
     avatar_url: row.avatar_url || row.avatar || "",
-    created_at: row.created_at || null
+    created_at: row.created_at || null,
+    country: row.country || null
   };
 }
 function fetchProfiles(ids){
@@ -801,12 +929,15 @@ function renderGrid(){
     var card = document.createElement("button");
     card.className = "card";
     card.setAttribute("aria-label", l.title + " — " + fmt(l.price_ngn));
+    var sc = sellerCountryOf(l.seller_id);
+    var loc = localEq(l.price_ngn);
     card.innerHTML =
       '<span class="photo">' + coverHTML(l) +
       (l.escrow_enabled ? '<span class="vault-badge">'+shieldSVG(13)+' TrybVault</span>' : '') + '</span>' +
       '<span class="body"><span class="price">'+fmt(l.price_ngn)+'</span>' +
+      (loc ? '<span class="price-local">'+esc(loc)+'</span>' : '') +
       '<span class="title">'+esc(l.title)+'</span>' +
-      '<span class="meta">'+esc(sellerName(l.seller_id))+' · '+esc(l.location)+' · '+(l.kind==="digital"?"Digital":"Physical")+'</span></span>';
+      '<span class="meta">'+esc(sellerName(l.seller_id))+' · '+(sc ? esc(sc.flag+' '+sc.name)+' · ' : '')+esc(l.location)+' · '+(l.kind==="digital"?"Digital":"Physical")+'</span></span>';
     card.addEventListener("click", function(){ openDetail(l.id); });
     grid.appendChild(card);
   });
@@ -824,8 +955,13 @@ function sellerCardHTML(l){
     ? '<div class="avatar"><img src="'+esc(p.avatar_url)+'" alt="" /></div>'
     : '<div class="avatar">'+esc(initials(sellerName(l.seller_id)))+'</div>';
   var line = sellerLine(l.seller_id);
+  var sc = sellerCountryOf(l.seller_id);
   return av + '<div><div class="s-name">'+esc(sellerName(l.seller_id))+'</div>' +
-    '<div class="s-sub">'+(line ? esc(line) + '<br/>' : '') + esc(l.location) + '</div></div>';
+    '<div class="s-sub">'+(line ? esc(line) + '<br/>' : '') + (sc ? esc(sc.flag + ' ' + sc.name) + ' · ' : '') + esc(l.location) + '</div></div>';
+}
+function detailPriceHTML(l){
+  var loc = localEq(l.price_ngn);
+  return fmt(l.price_ngn) + (loc ? ' <span class="detail-price-local">'+esc(loc)+'</span>' : '');
 }
 function openDetail(id){
   var l = findListing(id); if(!l) return;
@@ -845,7 +981,7 @@ function openDetail(id){
   $("detailWrap").innerHTML =
     '<button class="back-btn" data-go="browse">‹ Back to browsing</button>' +
     '<div class="detail-photo">' + (l.photo_url ? '<img src="'+esc(l.photo_url)+'" alt="'+esc(l.title)+'" />' : coverHTML(l)) + '</div>' +
-    '<div class="detail-head"><div class="detail-price">'+fmt(l.price_ngn)+'</div>' +
+    '<div class="detail-head"><div class="detail-price" id="detailPrice">'+detailPriceHTML(l)+'</div>' +
     '<h2 class="detail-title">'+esc(l.title)+'</h2>' +
     '<div class="detail-meta">'+esc(l.location)+' · '+(isDigital ? 'Digital — delivered in chat' : 'Physical item')+' · '+esc(l.category)+'</div></div>' +
     '<div class="detail-desc"><h3>About this item</h3>'+esc(l.description || "No description provided — message the seller on TrybChat for details.")+'</div>' +
@@ -871,6 +1007,9 @@ function openDeal(kind){
 }
 function payOptionsHTML(l){
   var usd = usdOf(l.price_ngn);
+  var vc = viewerCountry();
+  var isNG = viewerCountryCode() === "NG";
+  if(!isNG && S.payMethod === "bank_transfer") S.payMethod = (S.deal === "meet") ? "cash" : "main_balance";
   var bal = S.wallet ? Number(S.wallet.main_balance)||0 : null;
   var insufficient = S.user && bal !== null && bal < usd;
   function opt(val, name, sub, opts){
@@ -880,7 +1019,9 @@ function payOptionsHTML(l){
       '<span class="radio"></span><span><span class="p-name">'+name+'</span><span class="p-sub" style="display:block">'+sub+'</span>' +
       (opts.extra || "") + '</span></button>';
   }
-  var h = '<h3 style="margin:14px 0 10px;font-size:15px">How will you pay?</h3>';
+  var h = '<p class="pay-total">Item price: <b>'+fmt(l.price_ngn)+'</b>' +
+    (localEq(l.price_ngn) ? ' <span class="pt-local">'+esc(localEq(l.price_ngn))+'</span>' : '') + '</p>';
+  h += '<h3 style="margin:0 0 10px;font-size:15px">How will you pay?</h3>';
   if(!S.user){
     h += opt("main_balance", "Main Balance", "Sign in to pay from your real TrybNetwork Main Balance.", {disabled:true});
   } else if(bal === null){
@@ -888,9 +1029,14 @@ function payOptionsHTML(l){
   } else if(insufficient){
     h += opt("main_balance", "Main Balance", '<span class="warn">Insufficient Main Balance — you have '+fmtUSD(bal)+' (≈ '+fmt(Math.round(bal*RATE))+'), this holds '+fmtUSD(usd)+'.</span>', {disabled:true});
   } else {
-    h += opt("main_balance", "Main Balance", 'Your balance: <b>'+fmtUSD(bal)+'</b> (≈ '+fmt(Math.round(bal*RATE))+'). TrybVault will hold exactly <b>'+fmtUSD(usd)+'</b> for this item.');
+    var holdLocal = (!isNG && vc && vc.ccy !== "USD") ? fmtLocal(usd) : "";
+    h += opt("main_balance", "Main Balance", 'Your balance: <b>'+fmtUSD(bal)+'</b> (≈ '+fmt(Math.round(bal*RATE))+'). TrybVault will hold exactly <b>'+fmtUSD(usd)+'</b>'+(holdLocal ? ' (≈ '+holdLocal+')' : '')+' for this item.');
   }
-  h += opt("bank_transfer", "Bank Transfer", "Transfer to the TrybVault escrow account. TrybVault confirms your transfer before the order shows Paid.");
+  if(isNG){
+    h += opt("bank_transfer", "Bank Transfer", "Transfer to the TrybVault escrow account. TrybVault confirms your transfer before the order shows Paid.");
+  } else {
+    h += '<p class="pay-note">Bank transfer is available in Nigeria only.</p>';
+  }
   if(S.deal==="meet"){
     h += opt("cash", "Cash", "Pay the seller in cash when you meet and inspect the item.");
   } else {
@@ -933,6 +1079,7 @@ var ORDER_ERRORS = {
   listing_inactive: "This listing is no longer available.",
   not_signed_in: "Sign in with your TrybNetwork account first.",
   amount_too_small: "That price is too small to hold from Main Balance.",
+  bank_transfer_ng_only: "Bank transfer is available in Nigeria only.",
   bad_combo: "That payment combination isn\u2019t available for this item."
 };
 function placeOrder(){
@@ -1261,14 +1408,57 @@ function uploadPhoto(){
       return sb.storage.from("tm-media").getPublicUrl(path).data.publicUrl;
     }).catch(function(){ return null; });
 }
+/* Sell price is entered in the seller's own signup-country currency and
+   converted to canonical ₦ for storage: local ÷ rate = USD, × RATE = ₦.
+   Nigerian sellers keep plain ₦ entry, exactly as before. */
+function sellerCountry(){ return countryOf(S.user ? viewerCountryCode() : "NG") || countryOf("NG"); }
+function sellPriceNgn(){
+  var c = sellerCountry();
+  var v = parseFloat($("fPrice").value);
+  if(!v || v <= 0) return 0;
+  if(c.code === "NG") return Math.round(v);
+  return Math.round(v / c.rate * RATE);
+}
+function setupSellPrice(){
+  var c = sellerCountry();
+  var lbl = $("fPriceLabel"), inp = $("fPrice");
+  if(!lbl || !inp) return;
+  if(c.code === "NG"){
+    lbl.textContent = "Price (₦)";
+    inp.min = "100"; inp.step = "100"; inp.placeholder = "e.g. 85000";
+  } else {
+    lbl.textContent = "Price (" + c.flag + " " + c.ccy + ")";
+    inp.min = "0"; inp.step = "any"; inp.placeholder = "e.g. 50";
+  }
+  updatePriceConv();
+}
+function updatePriceConv(){
+  var box = $("priceConv");
+  if(!box) return;
+  var c = sellerCountry();
+  var v = parseFloat($("fPrice").value);
+  if(c.code === "NG" || !v || v <= 0){ box.style.display = "none"; box.textContent = ""; return; }
+  var ngn = sellPriceNgn();
+  box.style.display = "";
+  if(ngn < 100){
+    box.textContent = "That converts to " + fmt(ngn) + " — below the ₦100 minimum listing price.";
+    box.style.color = "var(--danger)";
+  } else {
+    box.textContent = "Listing price: " + fmt(ngn) + " — buyers see this price; you receive Main Balance (USD) when TrybVault releases.";
+    box.style.color = "";
+  }
+}
+$("fPrice").addEventListener("input", updatePriceConv);
 $("sellForm").addEventListener("submit", function(e){
   e.preventDefault();
   if(!requireAuth("sell")) return;
   var title = $("fTitle").value.trim();
-  var price = parseInt($("fPrice").value, 10);
+  var priceNgn = sellPriceNgn();
   var loc = $("fLoc").value.trim();
   var desc = $("fDesc").value.trim();
-  if(!title || !price || price < 100 || !loc){ toast("Fill in the title, a price of ₦100+, and a location."); return; }
+  if(!title || !loc){ toast("Fill in the title and a location."); return; }
+  if(!priceNgn){ toast(sellerCountry().code === "NG" ? "Enter a price of ₦100 or more." : "Enter a price in " + sellerCountry().ccy + "."); return; }
+  if(priceNgn < 100){ toast("That price converts to " + fmt(priceNgn) + " — listings start at ₦100. Raise the price."); return; }
   var btn = $("sellSubmit");
   btn.disabled = true; btn.textContent = "Publishing…";
   uploadPhoto().then(function(photoUrl){
@@ -1276,7 +1466,7 @@ $("sellForm").addEventListener("submit", function(e){
       seller_id: S.user.id,
       title: title,
       description: desc,
-      price_ngn: price,
+      price_ngn: priceNgn,
       kind: S.sellType,
       category: $("fCat").value,
       location: loc,
@@ -1288,6 +1478,7 @@ $("sellForm").addEventListener("submit", function(e){
     if(r.error){ toast("Couldn\u2019t publish — " + (r.error.message || "try again.")); return; }
     toast("Your listing is live on TrybMart!");
     e.target.reset(); S.photoBlob = null; S.photoPreviewUrl = null;
+    updatePriceConv();
     $("photoPreview").classList.remove("show");
     S.type = "all"; S.cat = "All categories"; S.q = "";
     $("searchInput").value = "";
@@ -1349,6 +1540,7 @@ CATEGORIES.forEach(function(c){ var o = document.createElement("option"); o.valu
 renderHead();
 renderCats();
 loadListings();
+detectViewerCountry();
 if(sb){
   sb.auth.getSession().then(function(r){
     if(r.data && r.data.session) setUser(r.data.session.user);
