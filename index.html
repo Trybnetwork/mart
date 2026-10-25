@@ -253,6 +253,32 @@ header.site{position:sticky;top:0;z-index:60;background:var(--navy);color:#fff;
 .rate-star.on{color:var(--gold);border-color:var(--gold)}
 .rated-note{color:var(--ok);font-weight:700;font-size:13.5px;margin-top:12px}
 
+/* ---------- Escrow photo proofs ---------- */
+.proof-block{margin-top:14px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:13px 14px}
+.proof-head{font-weight:800;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.proof-optional{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  background:var(--gold);color:var(--navy);padding:3px 8px;border-radius:999px}
+.proof-note{font-size:13.5px;color:var(--muted);margin:7px 0 0;line-height:1.5}
+.proof-instr{font-size:14px;margin:10px 0 6px;line-height:1.55}
+.proof-code{font-size:26px;font-weight:800;letter-spacing:.14em;background:var(--surface);
+  border:1.5px dashed var(--gold);border-radius:10px;padding:10px 14px;text-align:center;
+  font-variant-numeric:tabular-nums;margin:0 0 4px}
+.proof-micro{font-size:12.5px;color:var(--muted);line-height:1.55;margin:9px 0 12px}
+.proof-evidence{margin-top:14px}
+.proof-ev-title{font-weight:800;font-size:15px;margin-bottom:8px}
+.proof-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.proof-card{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:11px;min-width:0}
+.proof-card-label{font-weight:800;font-size:13.5px;margin-bottom:8px}
+.proof-img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;margin-bottom:8px;background:var(--surface)}
+.proof-reg-sub{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.45;word-break:break-word}
+.proof-card .btn{margin-top:9px}
+.proof-missing{display:flex;align-items:center;justify-content:center;color:var(--muted);
+  font-size:13px;font-weight:600;text-align:center;min-height:90px;padding:10px}
+.proof-verify-result{font-size:13px;font-weight:700;margin-top:8px;line-height:1.45}
+.proof-verify-result:empty{display:none;margin:0}
+.proof-verify-result.ok{color:var(--ok)}
+.proof-verify-result.bad{color:var(--danger)}
+
 /* ---------- Profile ---------- */
 .profile-head{display:flex;gap:15px;align-items:center;margin:10px 0 16px}
 .profile-head .avatar{width:74px;height:74px;font-size:27px}
@@ -664,7 +690,8 @@ var S = {
   deliveryFile:null, deliveryMap:{}, deliveryMeta:{},
   sellType:"physical", sellDeal:"both",
   ordersSeg:"buying", afterLogin:null, detectedCountry:null, disputeFor:null,
-  adminTransfers:[], adminDisputes:[], adminLoaded:false, adminLoading:false, adminError:false
+  adminTransfers:[], adminDisputes:[], adminLoaded:false, adminLoading:false, adminError:false,
+  proofs:{}, proofCodes:{}, proofCodeTried:{}, proofBusy:{}
 };
 
 function $(id){ return document.getElementById(id); }
@@ -906,7 +933,7 @@ function loadOwnAccount(){
 function setUser(user){
   var was = S.user && S.user.id;
   S.user = user || null;
-  if(!S.user){ S.profile = null; S.wallet = null; S.orders = []; S.myListings = []; S.adminTransfers = []; S.adminDisputes = []; S.adminLoaded = false; S.adminLoading = false; S.adminError = false; }
+  if(!S.user){ S.profile = null; S.wallet = null; S.orders = []; S.myListings = []; S.adminTransfers = []; S.adminDisputes = []; S.adminLoaded = false; S.adminLoading = false; S.adminError = false; S.proofs = {}; S.proofCodes = {}; S.proofCodeTried = {}; S.proofBusy = {}; }
   renderHead();
   if(S.user && S.user.id !== was){ loadOwnAccount(); loadOrders(); loadMyListings(); }
 }
@@ -1336,6 +1363,7 @@ function orderCardHTML(o){
     h += '<div class="awaiting"><b>Dispute opened — TrybVault is reviewing.</b> ' +
       (isBuyer ? 'Your payment stays frozen until it\u2019s resolved.' : 'The payment stays frozen in TrybVault until it\u2019s resolved.') +
       (o.dispute_reason ? '<br/>Reason given: ' + esc(o.dispute_reason) : '') + '</div>';
+    h += proofEvidenceHTML(o, { disputed:true });
     return h;
   }
   if(o.status==="awaiting_transfer_confirmation"){
@@ -1367,6 +1395,16 @@ function orderCardHTML(o){
       h += '<p style="color:var(--muted);font-size:14px;margin:12px 0 0;line-height:1.55">Payment confirmed by TrybVault. Meet '+(isBuyer ? 'the seller' : 'the buyer')+' to hand over the item.</p>';
     }
     if(o.status==="completed") h += '<p style="color:var(--ok);font-weight:700;margin:12px 0 0">Deal complete.</p>';
+  }
+  if(isEscrowPhysical(o)){
+    var pEntry = S.proofs[o.id];
+    var pLoaded = !!(pEntry && pEntry.loaded);
+    var hasProofs = pLoaded && !!(pEntry.dispatch || pEntry.handover);
+    var wantDispatch = !isBuyer && o.status==="paid_into_vault" && !(pLoaded && pEntry.dispatch);
+    var wantHandover = isBuyer && (o.status==="paid_into_vault" || o.status==="delivered") && !(pLoaded && pEntry.handover);
+    if(wantDispatch) h += proofRegisterHTML(o, "dispatch");
+    if(wantHandover) h += proofRegisterHTML(o, "handover");
+    if(hasProofs) h += proofEvidenceHTML(o, {});
   }
   /* actions */
   var acts = "";
@@ -1424,6 +1462,7 @@ function renderOrdersInto(){
       (S.ordersSeg==="buying" ? "When you buy something — by meetup or TrybVault — it shows up here." : "When someone buys one of your listings, the deal shows up here.") + '</p></div>';
     return;
   }
+  mine.forEach(function(o){ ensureProofs(o); });
   zone.innerHTML = "";
   mine.forEach(function(o){
     var card = document.createElement("div");
@@ -1434,6 +1473,7 @@ function renderOrdersInto(){
   zone.querySelectorAll("[data-act]").forEach(function(b){
     b.addEventListener("click", function(){ orderAction(b); });
   });
+  wireProofButtons(zone);
 }
 function orderAction(b){
   var act = b.getAttribute("data-act"), id = b.getAttribute("data-id");
@@ -1540,6 +1580,215 @@ function orderAction(b){
   }).catch(function(){ toast("Network error — try again."); renderOrdersInto(); });
 }
 
+/* ---------- Escrow photo proofs (chain of custody) ---------- */
+/* Physical TrybVault escrow orders only — never meetup, cash or digital.
+   The seller registers ONE dispatch photo and the buyer may register ONE
+   handover photo, each with the day's code written beside the item.
+   Registration goes through the tm-proof Edge Function; reads come only
+   from the tm_order_proofs / tm_proof_code RPCs — the client never writes
+   proof rows directly. */
+var PROOF_MAX = 6*1024*1024;
+var PROOF_MEDIA_BASE = "https://zvubytosshkxpbpvgcsw.supabase.co/storage/v1/object/public/tm-media/";
+var PROOF_ERRORS = {
+  not_seller: "Only the seller can register the dispatch photo.",
+  not_buyer: "Only the buyer can register the handover photo.",
+  wrong_state: "A photo can\u2019t be registered for this order right now.",
+  already_registered: "A photo is already registered for this step.",
+  bad_file_type: "That file isn\u2019t a photo — pick an image.",
+  file_too_large: "That photo is too large — keep it under 6 MB.",
+  not_escrow: "Photo proofs are only for TrybVault escrow orders.",
+  not_physical: "Photo proofs are only for physical items.",
+  not_found: "That order couldn\u2019t be found."
+};
+function isEscrowPhysical(o){
+  if(!o || o.path !== "escrow") return false;
+  var l = orderListing(o);
+  return !!(l && l.kind === "physical");
+}
+function proofURL(p){ return PROOF_MEDIA_BASE + (p ? (p.storage_path || "") : ""); }
+function proofShort(p){ return String((p && p.sha256) || "").slice(0,10) + "\u2026"; }
+function fetchOrderProofs(orderId){
+  if(!sb) { S.proofs[orderId] = { dispatch:null, handover:null, loaded:true }; return Promise.resolve(); }
+  return sb.rpc("tm_order_proofs", { p_order: orderId }).then(function(r){
+    var entry = { dispatch:null, handover:null, loaded:true };
+    var d = r.data || {};
+    var list = Array.isArray(d) ? d : (Array.isArray(d.proofs) ? d.proofs : []);
+    if(!r.error && (d.ok !== false)) list.forEach(function(p){
+      if(p.kind === "dispatch") entry.dispatch = p;
+      else if(p.kind === "handover") entry.handover = p;
+    });
+    S.proofs[orderId] = entry;
+  }).catch(function(){ S.proofs[orderId] = { dispatch:null, handover:null, loaded:true }; });
+}
+function fetchProofCode(orderId){
+  if(!sb){ S.proofCodeTried[orderId] = true; return Promise.resolve(); }
+  return sb.rpc("tm_proof_code", { p_order: orderId }).then(function(r){
+    S.proofCodeTried[orderId] = true;
+    var d = r.data || {};
+    if(!r.error && d.ok && d.code) S.proofCodes[orderId] = String(d.code);
+  }).catch(function(){ S.proofCodeTried[orderId] = true; });
+}
+function proofNeedsCode(o){
+  if(!S.user) return false;
+  var entry = S.proofs[o.id];
+  if(o.seller_id === S.user.id && o.status === "paid_into_vault" && !(entry && entry.loaded && entry.dispatch)) return true;
+  if(o.buyer_id === S.user.id && (o.status === "paid_into_vault" || o.status === "delivered") && !(entry && entry.loaded && entry.handover)) return true;
+  return false;
+}
+function ensureProofs(o){
+  if(!sb || !o || !isEscrowPhysical(o)) return;
+  var id = o.id;
+  var entry = S.proofs[id];
+  var needProofs = !(entry && entry.loaded);
+  var needCode = proofNeedsCode(o) && !S.proofCodeTried[id] && !S.proofCodes[id];
+  if((!needProofs && !needCode) || S.proofBusy[id]) return;
+  S.proofBusy[id] = true;
+  var jobs = [];
+  if(needProofs) jobs.push(fetchOrderProofs(id));
+  if(needCode) jobs.push(fetchProofCode(id));
+  Promise.all(jobs).then(function(){
+    delete S.proofBusy[id];
+    if($("view-profile") && $("view-profile").classList.contains("active")){ renderOrdersInto(); renderAdminInto(); }
+  }).catch(function(){ delete S.proofBusy[id]; });
+}
+function proofRegisterHTML(o, kind){
+  var isDispatch = kind === "dispatch";
+  var code = S.proofCodes[o.id] || "";
+  var h = '<div class="proof-block"><div class="proof-head">' + (isDispatch ? "Dispatch photo" : "Handover photo") +
+    (isDispatch ? "" : ' <span class="proof-optional">Optional</span>') + '</div>';
+  if(!isDispatch) h += '<p class="proof-note">Add a photo of what arrived — it strengthens your side in a dispute.</p>';
+  if(code){
+    h += '<p class="proof-instr">Write this code on paper beside the item, then photograph them together:</p>' +
+      '<div class="proof-code">' + esc(code) + '</div>' +
+      '<p class="proof-micro">A registered photo proves this exact file existed at that time — photograph the item itself, with today\u2019s code beside it.</p>' +
+      '<button class="btn btn-navy block" data-proof-capture="' + kind + '" data-id="' + o.id + '">Take photo &amp; register</button>';
+  } else {
+    h += '<p class="proof-instr">Fetching today\u2019s code…</p>';
+  }
+  return h + '</div>';
+}
+function proofEvidenceCardHTML(p, label){
+  var url = proofURL(p);
+  return '<div class="proof-card"><div class="proof-card-label">' + esc(label) + '</div>' +
+    '<img class="proof-img" src="' + esc(url) + '" alt="' + esc(label) + ' photo" loading="lazy" />' +
+    '<div class="proof-reg-sub">Registered ' + esc(fmtWhen(p.created_at)) + '</div>' +
+    '<div class="proof-reg-sub">Fingerprint ' + esc(proofShort(p)) + '</div>' +
+    '<button class="btn btn-navy small" data-proof-verify data-url="' + esc(url) + '" data-sha="' + esc(p.sha256 || "") + '">Verify</button>' +
+    '<div class="proof-verify-result" aria-live="polite"></div></div>';
+}
+function proofEvidenceHTML(o, opts){
+  if(!isEscrowPhysical(o)) return "";
+  var entry = S.proofs[o.id];
+  if(!entry || !entry.loaded) return "";
+  var d = entry.dispatch, hv = entry.handover;
+  if(!d && !hv) return "";
+  var disputed = !!(opts && opts.disputed);
+  var h = '<div class="proof-evidence"><div class="proof-ev-title">Photo evidence</div><div class="proof-pair">';
+  if(d) h += proofEvidenceCardHTML(d, "Dispatch");
+  else if(disputed) h += '<div class="proof-card proof-missing">No dispatch photo</div>';
+  if(hv) h += proofEvidenceCardHTML(hv, "Handover");
+  else if(disputed) h += '<div class="proof-card proof-missing">Awaiting handover photo</div>';
+  return h + '</div></div>';
+}
+function adminProofsHTML(o){
+  if(!isEscrowPhysical(o)) return "";
+  var entry = S.proofs[o.id];
+  if(!entry || !entry.loaded) return '<p class="q-line">Loading photo evidence…</p>';
+  var ev = proofEvidenceHTML(o, { disputed:true });
+  if(!ev) return '<p class="q-line"><b>Photo evidence:</b> none registered for this order.</p>';
+  return ev;
+}
+function invokeProof(orderId, kind, file){
+  return readFileB64(file).then(function(b64){
+    return sb.functions.invoke("tm-proof", { body: { order_id: orderId, kind: kind, file_base64: b64, file_name: file.name } });
+  }).then(function(res){
+    var d = res.data || {};
+    if(d.ok && d.proof) return { ok:true, proof: d.proof };
+    if(d.error) return { ok:false, code: d.error };
+    if(res.error && res.error.context && typeof res.error.context.json === "function"){
+      return res.error.context.json().then(function(body){
+        return { ok:false, code: (body && body.error) || "" };
+      }).catch(function(){ return { ok:false, code:"" }; });
+    }
+    return { ok:false, code:"" };
+  });
+}
+function startProofCapture(btn){
+  var orderId = btn.getAttribute("data-id");
+  var kind = btn.getAttribute("data-proof-capture");
+  var inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "image/*";
+  inp.setAttribute("capture", "environment");
+  inp.addEventListener("change", function(){
+    var f = inp.files && inp.files[0];
+    if(!f) return;
+    if(f.size > PROOF_MAX){ toast("That photo is over 6 MB — take a smaller one."); return; }
+    if(f.size === 0){ toast("That photo looks empty — try again."); return; }
+    if(!f.type || f.type.indexOf("image/") !== 0){ toast("That file isn\u2019t a photo — pick an image."); return; }
+    var old = btn.textContent;
+    btn.disabled = true; btn.textContent = "Registering photo…";
+    invokeProof(orderId, kind, f).then(function(res){
+      if(res.ok){
+        var entry = S.proofs[orderId] || { dispatch:null, handover:null, loaded:true };
+        entry[kind] = res.proof; entry.loaded = true;
+        S.proofs[orderId] = entry;
+        toast(kind === "dispatch" ? "Dispatch photo registered." : "Handover photo registered.");
+        renderOrdersInto();
+      } else {
+        toast(PROOF_ERRORS[res.code] || "Couldn\u2019t register that photo — try again.");
+        if(res.code === "already_registered"){
+          fetchOrderProofs(orderId).then(function(){ renderOrdersInto(); });
+        } else {
+          btn.disabled = false; btn.textContent = old;
+        }
+      }
+    }).catch(function(){
+      toast("Network error — try again.");
+      btn.disabled = false; btn.textContent = old;
+    });
+  });
+  inp.click();
+}
+function verifyProofPhoto(btn){
+  var url = btn.getAttribute("data-url");
+  var sha = String(btn.getAttribute("data-sha") || "").toLowerCase();
+  var card = btn.closest ? btn.closest(".proof-card") : null;
+  var slot = card ? card.querySelector(".proof-verify-result") : null;
+  var old = btn.textContent;
+  btn.disabled = true; btn.textContent = "Verifying…";
+  if(slot){ slot.textContent = ""; slot.className = "proof-verify-result"; }
+  function done(){ btn.disabled = false; btn.textContent = old; }
+  fetch(url).then(function(r){
+    if(!r.ok) throw new Error("fetch failed");
+    return r.arrayBuffer();
+  }).then(function(buf){
+    if(!(window.crypto && crypto.subtle && crypto.subtle.digest)) throw new Error("no subtle");
+    return crypto.subtle.digest("SHA-256", buf);
+  }).then(function(digest){
+    var bytes = new Uint8Array(digest), hex = "";
+    for(var i = 0; i < bytes.length; i++) hex += ("0" + bytes[i].toString(16)).slice(-2);
+    if(slot){
+      var match = hex === sha;
+      slot.textContent = match ? "\u2713 Matches the registered fingerprint" : "\u2717 Does not match";
+      slot.className = "proof-verify-result " + (match ? "ok" : "bad");
+    }
+    done();
+  }).catch(function(){
+    if(slot){ slot.textContent = "Couldn\u2019t verify — check your connection and try again."; slot.className = "proof-verify-result bad"; }
+    done();
+  });
+}
+function wireProofButtons(root){
+  if(!root) return;
+  root.querySelectorAll("[data-proof-capture]").forEach(function(b){
+    b.addEventListener("click", function(){ startProofCapture(b); });
+  });
+  root.querySelectorAll("[data-proof-verify]").forEach(function(b){
+    b.addEventListener("click", function(){ verifyProofPhoto(b); });
+  });
+}
+
 /* ---------- Admin queue (TrybVault operations) ---------- */
 /* Visible only when the signed-in user's own tn_profiles row has
    is_admin = true; the RPCs re-check admin server-side. Two jobs:
@@ -1596,6 +1845,7 @@ function disputeCardHTML(o){
   h += '<p class="q-line"><b>Dispute reason:</b> ' + esc(o.dispute_reason || "No reason given") + '</p>';
   h += '<p class="q-line">Disputed ' + esc(fmtWhen(o.disputed_at) || "—") + ' · <b>' + fmt(o.amount_ngn) + ' (' + fmtUSD(o.amount_usd) + ')</b> held in TrybVault</p>';
   h += '<p class="q-line">Delivery file: ' + (o.downloaded_at ? 'downloaded by the buyer on ' + esc(fmtWhen(o.downloaded_at)) : 'not downloaded') + '</p>';
+  h += adminProofsHTML(o);
   h += '<div class="order-actions"><div class="dispute-btns">' +
     '<button class="btn btn-navy" data-admin-act="refund" data-id="'+o.id+'">Refund buyer</button>' +
     '<button class="btn btn-navy" data-admin-act="release" data-id="'+o.id+'">Release to seller</button></div>' +
@@ -1629,6 +1879,8 @@ function renderAdminInto(){
   zone.querySelectorAll("[data-admin-act]").forEach(function(b){
     b.addEventListener("click", function(){ adminAction(b); });
   });
+  wireProofButtons(zone);
+  S.adminDisputes.forEach(function(o){ ensureProofs(o); });
 }
 function adminRefresh(){ S.adminLoaded = false; renderAdminInto(); loadAdminQueue(); loadOrders(); }
 function adminAction(b){
@@ -2077,21 +2329,19 @@ if(sb){
 }
 })();
 </script>
-
 <!-- tn-visit-tracker (mart) -->
 <script>
-/* TrybNetwork visitor tracker — logs one anonymous visit per site per
-   browser session (and at most one per 30 min per site): IP, country,
+/* TrybNetwork visitor tracker — logs one anonymous landing per site +
+   page per browser session; the server folds repeat landings from the
+   same IP + page into one record with a hit counter. IP, country and
    device type. Fire-and-forget; never breaks or delays the page. */
 (function () {
   try {
     var SITE = "mart";
     try {
-      if (sessionStorage.getItem("tn_visit_" + SITE)) return;
-      var last = +(localStorage.getItem("tn_visit_ts_" + SITE) || 0);
-      if (Date.now() - last < 30 * 60 * 1000) return;
-      sessionStorage.setItem("tn_visit_" + SITE, "1");
-      localStorage.setItem("tn_visit_ts_" + SITE, String(Date.now()));
+      var skey = "tn_visit_" + SITE + "|" + (location.pathname || "/");
+      if (sessionStorage.getItem(skey)) return;
+      sessionStorage.setItem(skey, "1");
     } catch (e) {}
     var vid = null;
     try {
@@ -2189,5 +2439,6 @@ if(sb){
 })();
 
 </script>
+
 </body>
 </html>
