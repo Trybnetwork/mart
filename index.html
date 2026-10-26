@@ -662,7 +662,27 @@ var COUNTRIES = [
   { code: "BR", name: "Brazil", ccy: "BRL", symbol: "R$", flag: "🇧🇷", rate: 5.5 },
   { code: "MX", name: "Mexico", ccy: "MXN", symbol: "Mex$", flag: "🇲🇽", rate: 17.2 },
   { code: "TR", name: "Turkey", ccy: "TRY", symbol: "₺", flag: "🇹🇷", rate: 32.5 },
-  { code: "AU", name: "Australia", ccy: "AUD", symbol: "A$", flag: "🇦🇺", rate: 1.52 }
+  { code: "AU", name: "Australia", ccy: "AUD", symbol: "A$", flag: "🇦🇺", rate: 1.52 },
+  { code: "AF", name: "Afghanistan", ccy: "AFN", symbol: "؋", flag: "🇦🇫", rate: 72 },
+  { code: "AL", name: "Albania", ccy: "ALL", symbol: "L", flag: "🇦🇱", rate: 92 },
+  { code: "UA", name: "Ukraine", ccy: "UAH", symbol: "₴", flag: "🇺🇦", rate: 41.5 },
+  { code: "PL", name: "Poland", ccy: "PLN", symbol: "zł", flag: "🇵🇱", rate: 4.0 },
+  { code: "GR", name: "Greece", ccy: "EUR", symbol: "€", flag: "🇬🇷", rate: 0.92 },
+  { code: "CZ", name: "Czechia", ccy: "CZK", symbol: "Kč", flag: "🇨🇿", rate: 23.5 },
+  { code: "SE", name: "Sweden", ccy: "SEK", symbol: "kr", flag: "🇸🇪", rate: 10.5 },
+  { code: "DK", name: "Denmark", ccy: "DKK", symbol: "kr", flag: "🇩🇰", rate: 6.85 },
+  { code: "RO", name: "Romania", ccy: "RON", symbol: "lei", flag: "🇷🇴", rate: 4.6 },
+  { code: "HU", name: "Hungary", ccy: "HUF", symbol: "Ft", flag: "🇭🇺", rate: 365 },
+  { code: "FI", name: "Finland", ccy: "EUR", symbol: "€", flag: "🇫🇮", rate: 0.92 },
+  { code: "BG", name: "Bulgaria", ccy: "BGN", symbol: "лв", flag: "🇧🇬", rate: 1.80 },
+  { code: "HR", name: "Croatia", ccy: "EUR", symbol: "€", flag: "🇭🇷", rate: 0.92 },
+  { code: "MM", name: "Myanmar", ccy: "MMK", symbol: "K", flag: "🇲🇲", rate: 2100 },
+  { code: "KH", name: "Cambodia", ccy: "KHR", symbol: "៛", flag: "🇰🇭", rate: 4050 },
+  { code: "NP", name: "Nepal", ccy: "NPR", symbol: "रू", flag: "🇳🇵", rate: 133 },
+  { code: "MY", name: "Malaysia", ccy: "MYR", symbol: "RM", flag: "🇲🇾", rate: 4.7 },
+  { code: "TH", name: "Thailand", ccy: "THB", symbol: "฿", flag: "🇹🇭", rate: 36 },
+  { code: "VN", name: "Vietnam", ccy: "VND", symbol: "₫", flag: "🇻🇳", rate: 25000 },
+  { code: "RU", name: "Russia", ccy: "RUB", symbol: "₽", flag: "🇷🇺", rate: 90 }
 ];
 function countryOf(code){
   code = String(code || "").toUpperCase();
@@ -2330,7 +2350,7 @@ if(sb){
 })();
 </script>
 
-<!-- TN auto-translate: matches the TrybNetwork app (Google Translate, 32 languages, device-language auto-apply on first visit) -->
+<!-- TN auto-translate: matches the TrybNetwork app (Google Translate, 52 languages, device-language auto-apply on first visit) -->
 <style>
 #google_translate_element { position:absolute; left:-9999px; top:-9999px; width:1px; height:1px; overflow:hidden; }
 .goog-te-banner-frame.skiptranslate, .goog-te-gadget-icon { display:none !important; }
@@ -2340,7 +2360,7 @@ body { top:0 !important; }
 <div id="google_translate_element" aria-hidden="true"></div>
 <script>
 (function(){
-  var SUPPORTED = ["en","fr","es","pt","ar","ha","yo","ig","sw","hi","ur","zh-CN","de","it","ru","tr","id","vi","th","tl","ta","te","bn","pa","ml","am","so","zu","sn","ja","ko","fa"];
+  var SUPPORTED = ["en","fr","es","pt","ar","ha","yo","ig","sw","hi","ur","zh-CN","de","it","ru","tr","id","vi","th","tl","ta","te","bn","pa","ml","am","so","zu","sn","ja","ko","fa","sq","ps","uk","pl","nl","el","cs","sv","da","no","ro","hu","fi","bg","hr","my","km","ne","mr","ms"];
   function cookieLang(){
     var m = document.cookie.match(/(?:^|;\s*)googtrans=\/en\/([^;]+)/);
     return m ? decodeURIComponent(m[1]) : null;
